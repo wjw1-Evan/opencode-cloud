@@ -1,0 +1,18 @@
+# binaries / caches
+*.exe
+*.test
+backend/server
+backend/bin/
+frontend/node_modules/
+node_modules/
+
+# go
+backend/vendor/
+
+# local env & secrets
+.env
+*.pem
+*.key
+
+# os
+.DS_Store
