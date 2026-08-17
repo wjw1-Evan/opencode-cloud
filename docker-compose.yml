@@ -1,23 +1,11 @@
 services:
   devcapsule:
-    build: ./backend
-    image: devcapsule:latest
+    image: ghcr.io/wjw1-evan/opencode-cloud:latest
     restart: unless-stopped
     ports:
       - "80:80"
     environment:
-      ADDR: ":8080"
-      POSTGRES_USER: devcapsule
-      POSTGRES_PASSWORD: devcapsule
-      POSTGRES_DB: devcapsule
-      DATABASE_URL: postgres://devcapsule:devcapsule@localhost:5432/devcapsule?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
-      NETWORK_NAME: ${NETWORK_NAME:-devcapsule_user-net}
-      IDLE_TIMEOUT_MIN: ${IDLE_TIMEOUT_MIN:-30}
-      BATCH_CONCURRENCY: ${BATCH_CONCURRENCY:-5}
-      DOCKER_HOST: unix:///var/run/docker.sock
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -26,7 +14,7 @@ services:
 
 networks:
   user-net:
-    name: ${NETWORK_NAME:-devcapsule_user-net}
+    name: devcapsule_user-net
     external: true
 
 volumes:

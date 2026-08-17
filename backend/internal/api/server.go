@@ -47,32 +47,6 @@ func New(cfg config.Config, st store.Store, dc *docker.Client, logger *log.Logge
 	}, nil
 }
 
-// EnsureAdmin bootstraps the default admin account.
-func (s *Server) EnsureAdmin(ctx context.Context) error {
-	_, err := s.st.GetUserByUsername(ctx, s.cfg.AdminUsername)
-	if err == nil {
-		return nil
-	}
-	if err != store.ErrNotFound {
-		return err
-	}
-	hash, err := auth.HashPassword(s.cfg.AdminPassword)
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	return s.st.CreateUser(ctx, &model.User{
-		ID:            model.NewID(),
-		Username:      s.cfg.AdminUsername,
-		PasswordHash:  hash,
-		PasswordPlain: s.cfg.AdminPassword,
-		Role:          model.RoleAdmin,
-		Status:        model.StatusActive,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	})
-}
-
 // Router assembles all routes.
 func (s *Server) Router() http.Handler {
 	apiMux := http.NewServeMux()

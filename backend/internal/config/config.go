@@ -9,8 +9,6 @@ type Config struct {
 	Addr             string
 	DatabaseURL      string
 	JWTSecret        string
-	AdminUsername    string
-	AdminPassword    string
 	NetworkName      string
 	IdleTimeoutMin   int
 	BatchConcurrency int
@@ -21,8 +19,6 @@ func Load() Config {
 		Addr:             getEnv("ADDR", ":8080"),
 		DatabaseURL:      getEnv("DATABASE_URL", "postgres://opencode:opencode@localhost:5432/opencode?sslmode=disable"),
 		JWTSecret:        getEnv("JWT_SECRET", "dev-secret-change-me"),
-		AdminUsername:    getEnv("ADMIN_USERNAME", "admin"),
-		AdminPassword:    getEnv("ADMIN_PASSWORD", "admin123"),
 		NetworkName:      getEnv("NETWORK_NAME", "devcapsule_user-net"),
 		IdleTimeoutMin:   getEnvInt("IDLE_TIMEOUT_MIN", 30),
 		BatchConcurrency: getEnvInt("BATCH_CONCURRENCY", 5),

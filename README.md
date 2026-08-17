@@ -57,14 +57,12 @@ docker run -d \
 
 **环境变量说明**：
 
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `JWT_SECRET` | ✅ | JWT 签名密钥，可用 `openssl rand -hex 32` 生成 |
-| `ADMIN_PASSWORD` | ✅ | 管理员密码 |
-| `ADMIN_USERNAME` | ❌ | 管理员用户名，默认 `admin` |
-| `NETWORK_NAME` | ❌ | 用户容器网络名，默认 `devcapsule_user-net` |
-| `IDLE_TIMEOUT_MIN` | ❌ | 空闲停止时间（分钟），默认 30 |
-| `BATCH_CONCURRENCY` | ❌ | 批量建容器并发数，默认 5 |
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `JWT_SECRET` | — | JWT 签名密钥，**生产必须修改**，可用 `openssl rand -hex 32` 生成 |
+| `NETWORK_NAME` | `devcapsule_user-net` | 用户容器网络名 |
+| `IDLE_TIMEOUT_MIN` | `30` | 空闲停止时间（分钟） |
+| `BATCH_CONCURRENCY` | `5` | 批量建容器并发数 |
 
 **使用 Docker Compose（推荐）**：
 
@@ -77,9 +75,7 @@ services:
     ports:
       - "80:80"
     environment:
-      JWT_SECRET: ${JWT_SECRET}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      NETWORK_NAME: devcapsule_user-net
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -96,9 +92,13 @@ volumes:
 ```
 
 ```bash
-# 启动
-JWT_SECRET=$(openssl rand -hex 32) ADMIN_PASSWORD=your-secure-password docker compose up -d
+# 一行启动（JWT_SECRET 自动生成）
+JWT_SECRET=$(openssl rand -hex 32) docker compose up -d
 ```
+
+**首次访问配置管理员**：
+
+启动后打开 `http://<服务器>/`，系统检测到尚无管理员账户，会自动跳转到初始化页面。填写管理员用户名和密码（≥ 8 位）即可完成设置，之后自动跳转到登录页。
 
 ### 方式 B：本地开发（前后端分离）
 
@@ -122,8 +122,8 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 ### 首次使用（3 步建组）
 
-1. 打开 `http://<服务器>/`，用管理员账号登录
-2. **用户与容器** → 填课程（如「Python 基础」）、数量、选模板 → 点「生成账号并建容器」，浏览器自动下载 `accounts.csv`
+1. 打开 `http://<服务器>/`，首次访问会自动跳转到**管理员初始化页面**，设置用户名和密码
+2. 设置完成后自动跳转到登录页，登录后进入管理台 → **用户与容器** → 填课程（如「Python 基础」）、数量、选模板 → 点「生成账号并建容器」，浏览器自动下载 `accounts.csv`
 3. **镜像模板** → 系统内置 opencode / vscode / jupyter 模板可直接用；也可创建自定义模板，填入任意工具镜像与端口
 
 用户拿到账号后访问门户登录，随后访问站点根路径 `/` 即自动进入自己专属的工具界面。
@@ -156,17 +156,12 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ADDR` | `:8080` | 后端监听地址 |
-| `DATABASE_URL` | `postgres://opencode:opencode@localhost:5432/opencode?sslmode=disable` | PostgreSQL 连接串 |
 | `JWT_SECRET` | `dev-secret-change-me` | JWT 签名密钥，**生产必须修改** |
-| `ADMIN_USERNAME` | `admin` | 自动创建的管理员用户名 |
-| `ADMIN_PASSWORD` | `admin123` | 自动创建的管理员密码，**生产必须修改** |
-| `NETWORK_NAME` | `devcapsule_user-net` | 用户容器所在自定义 bridge 网络 |
+| `NETWORK_NAME` | `devcapsule_user-net` | 用户容器网络名 |
 | `IDLE_TIMEOUT_MIN` | `30` | 空闲自动停止分钟数，`0` 关闭 |
 | `BATCH_CONCURRENCY` | `5` | 批量建容器并发数 |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon 地址（compose 内已配置；api 容器内自动生效） |
 
-compose 部署时把 `JWT_SECRET`、`ADMIN_PASSWORD` 等写入 `.env`（参考 `.env.example`）。
+> 管理员账户通过首次访问页面初始化，无需环境变量配置。
 
 ## 生产部署（公司场景）
 
@@ -204,7 +199,8 @@ server {
 
 ### 2. 升级 / 上线检查清单
 
-- [ ] `JWT_SECRET`、`ADMIN_PASSWORD` 已修改
+- [ ] `JWT_SECRET` 已修改（生产环境必须使用强随机值）
+- [ ] 首次访问时已设置管理员账户
 - [ ] `devcapsule_user-net` 网络已创建（`docker network create devcapsule_user-net`）
 - [ ] nginx 开启 TLS，HTTP 自动跳转 HTTPS
 - [ ] opencode 镜像锁定版本（系统模板默认 `:latest`，建议改为固定 tag，`autoupdate: false`），升级前先在测试环境验证代理
@@ -381,7 +377,6 @@ access_logs      id(bigserial), user_id, path, status, bytes, latency_ms, ts
 ```
 DevCapsule/
 ├── docker-compose.yml           # 单一镜像部署配置
-├── .env.example                 # 环境变量模板（JWT_SECRET / ADMIN_PASSWORD 必填）
 ├── .github/
 │   └── workflows/
 │       └── build.yml            # GitHub Actions 自动构建镜像
@@ -453,6 +448,14 @@ git tag v1.0.0 && git push origin v1.0.0
 # 拉取使用
 docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
 ```
+
+**标签生成规则**：
+
+| 触发事件 | 生成标签 | 说明 |
+|---|---|---|
+| push `main` | `main`, `sha-xxx`, `latest` | 主分支推送自动更新 `latest` |
+| push `v*` tag | `v1.0.0`, `1.0`, `latest` | 版本发布，同时更新 `latest` |
+| push PR | `pr-N`, `sha-xxx` | PR 构建不推送，仅验证编译 |
 
 当前实现状态：
 - ✅ Go 后端：认证（JWT + 限流）、批量建号、模板（多端口/环境变量/启动命令）、容器编排（幂等批量/空闲停/到期停/状态调和/实时 stats）、反向代理（SSE/WS、双层认证、多端口路由、访问日志）、后台周期任务

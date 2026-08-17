@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end test for DevCapsule.
-# Requires: docker compose up -d (with .env), docker network create devcapsule_user-net.
+# Requires: docker compose up -d, docker network create devcapsule_user-net.
 set -euo pipefail
 
 BASE="${BASE:-http://localhost}"
