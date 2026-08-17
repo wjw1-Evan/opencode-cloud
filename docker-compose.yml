@@ -9,13 +9,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - user-net
-
-networks:
-  user-net:
-    name: devcapsule_user-net
-    external: true
 
 volumes:
   pgdata:

@@ -37,22 +37,17 @@
 只需拉取一个镜像即可运行完整平台（包含 PostgreSQL + API + Nginx）。
 
 ```bash
-# 1. 创建用户容器网络
-docker network create devcapsule_user-net
-
-# 2. 运行容器（一个命令即可启动）
+# 运行容器（一个命令即可启动）
 docker run -d \
   --name devcapsule \
   -p 80:80 \
   -v pgdata:/var/lib/postgresql/data \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e JWT_SECRET=$(openssl rand -hex 32) \
-  -e ADMIN_PASSWORD=your-secure-password \
-  -e NETWORK_NAME=devcapsule_user-net \
   --restart unless-stopped \
   ghcr.io/wjw1-evan/opencode-cloud:latest
 
-# 3. 打开 http://<服务器>/ 用管理员账号登录
+# 打开 http://<服务器>/ 首次访问设置管理员账户
 ```
 
 **环境变量说明**：
@@ -60,7 +55,6 @@ docker run -d \
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `JWT_SECRET` | — | JWT 签名密钥，**生产必须修改**，可用 `openssl rand -hex 32` 生成 |
-| `NETWORK_NAME` | `devcapsule_user-net` | 用户容器网络名 |
 | `IDLE_TIMEOUT_MIN` | `30` | 空闲停止时间（分钟） |
 | `BATCH_CONCURRENCY` | `5` | 批量建容器并发数 |
 
@@ -79,16 +73,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - user-net
-
-networks:
-  user-net:
-    name: devcapsule_user-net
-    external: true
-
-volumes:
-  pgdata:
 ```
 
 ```bash
@@ -118,7 +102,7 @@ cd backend && go run ./cmd/server
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-> macOS（Docker Desktop）：用户容器间通过容器名路由，需先 `docker network create devcapsule_user-net`；Docker Desktop 的 VM 内存/CPU 需手动调高，一次跑 50 个容器本地吃力，生产建议 Linux 服务器。
+> macOS（Docker Desktop）：Docker Desktop 的 VM 内存/CPU 需手动调高，一次跑 50 个容器本地吃力，生产建议 Linux 服务器。
 
 ### 首次使用（3 步建组）
 
@@ -201,7 +185,6 @@ server {
 
 - [ ] `JWT_SECRET` 已修改（生产环境必须使用强随机值）
 - [ ] 首次访问时已设置管理员账户
-- [ ] `devcapsule_user-net` 网络已创建（`docker network create devcapsule_user-net`）
 - [ ] nginx 开启 TLS，HTTP 自动跳转 HTTPS
 - [ ] opencode 镜像锁定版本（系统模板默认 `:latest`，建议改为固定 tag，`autoupdate: false`），升级前先在测试环境验证代理
 - [ ] 资源限额已按分组规模设置；内存不足的机器开启空闲自动停
