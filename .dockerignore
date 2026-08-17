@@ -1,0 +1,10 @@
+.git
+.gitignore
+frontend/node_modules
+frontend/dist
+backend/internal/api/web/dist
+*.log
+Dockerfile
+docker-compose*.yml
+.github
+e2e

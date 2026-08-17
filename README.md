@@ -461,7 +461,7 @@ docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
 - ✅ 前端：Vue3 管理台（总览 / 用户与容器 / 镜像模板 / 镜像管理 / 使用帮助）+ 用户门户（查看状态、打开环境、自助改密），中英双语，构建产物 embed 进 Go 二进制
 - ✅ 部署：单一镜像（PostgreSQL + Nginx + Go API）、Supervisor 进程管理、GitHub Actions 自动构建（linux/amd64 + arm64）
 - ✅ CI/CD：GitHub Actions → GitHub Container Registry (ghcr.io)
-- 🚧 待完善：生产 TLS 全链路验证、通用工具路径改写（见里程碑）
+- 🚧 待完善：生产 TLS 全链路验证、通用工具路径改写
 
 ## 已知风险与 FAQ
 
@@ -471,12 +471,10 @@ docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
 4. **成本**：AI 用量统计不在平台范围，LLM Key 由各镜像/工具自行配置，平台不参与
 5. **用户终端外网访问**：opencode 内置终端允许用户安装依赖/访问外网，属预期行为；如需收紧用网络层 egress 控制
 6. **内网/离线环境拉不到镜像**：在能联网的机器上 `docker save` 导出 tar 包，然后在「镜像管理」→ 上传镜像导入（≤ 2GB），或直接在「镜像管理」→ 拉取镜像在线下载
-7. **任意镜像兼容性**：平台本身只要求镜像暴露 HTTP 端口即可接入，且支持多端口。opencode、code-server（系统模板通过 `--auth none` + 代理双层认证接入）、JupyterLab 均以根路径提供服务、开箱即用；Dify 等以子路径部署或不支持根路径直连的工具，需要代理层路径改写或独立反代配置（基础路径剥离、静态资源相对路径、Cookie 域等，见里程碑 M5）
+7. **任意镜像兼容性**：平台本身只要求镜像暴露 HTTP 端口即可接入，且支持多端口。opencode、code-server（系统模板通过 `--auth none` + 代理双层认证接入）、JupyterLab 均以根路径提供服务、开箱即用；Dify 等以子路径部署或不支持根路径直连的工具，需要代理层路径改写或独立反代配置（基础路径剥离、静态资源相对路径、Cookie 域等）
 
 ## 里程碑
 
 - **M1**（✅ 完成）：Go 后端——认证、批量建号、容器编排、模板、统计、后台周期任务
 - **M2**（✅ 完成）：反向代理（SSE/WS 透传、双层认证、多端口路由）+ 用户门户
 - **M3**（✅ 完成）：管理台（总览 / 用户与容器 / 模板 / 镜像管理 / 帮助）+ 空闲自动停 + 账号过期 + 中英双语
-- **M4**（🟡 部分完成）：登录限流、`access_logs` 审计已实现；TLS 由 nginx 承担，生产全链路验证待做
-- **M5**（🚧 待做）：通用工具路径改写——Dify / JupyterLab 等不支持前缀路由的工具，代理层路径改写与独立鉴权适配
