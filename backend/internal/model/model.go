@@ -73,6 +73,7 @@ type Template struct {
 	Healthcheck  string            `json:"healthcheck_cmd,omitempty"`
 	WorkspaceDir string            `json:"workspace_dir"`
 	Command      []string          `json:"command,omitempty"`
+	RunUser      string            `json:"run_user,omitempty"`
 	IsSystem     bool              `json:"is_system"`
 	CreatedAt    time.Time         `json:"created_at"`
 }

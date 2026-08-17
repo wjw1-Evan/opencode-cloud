@@ -40,7 +40,7 @@ ADMIN_ROLE=$(jq -r '.data.user.role // empty' "$TMP/login.json")
 echo "[2] create template"
 curl -s -b "$ADMIN_JAR" -o "$TMP/tpl.json" -w '%{http_code}' \
   -X POST "$BASE/platform/admin/templates" -H 'Content-Type: application/json' \
-  -d '{"name":"e2e-student","image":"devcapsule/student:1","internal_port":4096,"extra_ports":[3000],"cpu_limit":0.5,"mem_limit":1073741824,"workspace_dir":"/workspace","command":["web","--hostname","0.0.0.0","--port","4096"]}' \
+  -d '{"name":"e2e-student","image":"ghcr.io/anomalyco/opencode:latest","internal_port":4096,"extra_ports":[3000],"cpu_limit":0.5,"mem_limit":1073741824,"workspace_dir":"/workspace","command":["opencode","web","--hostname","0.0.0.0","--port","4096"]}' \
   | grep -q 200 && ok "template created" || bad "create template: $(cat "$TMP/tpl.json")"
 TPL_ID=$(jq -r '.data.id' "$TMP/tpl.json")
 EXTRA_PORTS=$(jq -r '.data.extra_ports | join(",")' "$TMP/tpl.json")

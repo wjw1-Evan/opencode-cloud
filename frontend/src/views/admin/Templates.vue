@@ -32,7 +32,7 @@
         <h3>{{ editing ? '编辑模板' : '新建模板' }}</h3>
         <div class="grid">
           <div><label>名称</label><input v-model="f.name" placeholder="如 default" /></div>
-          <div class="span2"><label>镜像</label><input v-model="f.image" placeholder="如 devcapsule/student:1" /></div>
+          <div class="span2"><label>镜像</label><input v-model="f.image" placeholder="如 ghcr.io/anomalyco/opencode:latest" /></div>
           <div><label>主端口</label><input v-model.number="f.internal_port" type="number" /></div>
           <div><label>附加端口（逗号分隔，可选）</label><input v-model="extraPortsText" placeholder="如 3000,5173,8000" /></div>
           <div><label>CPU 限制（核）</label><input v-model.number="f.cpu_limit" type="number" step="0.1" /></div>

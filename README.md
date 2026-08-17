@@ -1,6 +1,6 @@
 # DevCapsule（开发胶囊舱）
 
-基于 Docker 的编程开发环境容器管理平台：管理员批量生成账号、批量创建容器，用户登录后直接在浏览器中使用自己专属容器里的工具进行开发。平台内置 `opencode`、`vscode` 与 `jupyter` 三个系统模板开箱即用，同时管理员可以自由创建模板选择**任意提供 Web 界面的 Docker 镜像**（如 opencode、Dify、VS Code、JupyterLab…），自由配置端口、环境变量、启动命令与资源限额。每个用户对应一个独立容器，一一映射、互相隔离、代码持久化。
+基于 Docker 的编程开发环境容器管理平台：管理员批量生成账号、批量创建容器，用户登录后直接在浏览器中使用自己专属容器里的工具进行开发。平台内置 `opencode`、`vscode`、`jupyter` 与 `dify` 四个系统模板开箱即用，同时管理员可以自由创建模板选择**任意提供 Web 界面的 Docker 镜像**（如 opencode、Dify、VS Code、JupyterLab…），自由配置端口、环境变量、启动命令与资源限额。每个用户对应一个独立容器，一一映射、互相隔离、代码持久化。
 
 > 一句话：**管理员建一个分组 → 批量发账号 → 用户打开网页即可写代码 / 搭 AI 应用**。
 
@@ -242,7 +242,7 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 1. 选模板（镜像、主端口、附加端口、环境变量、启动命令、资源限额）+ 勾选用户（或建号后自动建）
 2. 后台 worker 池并发（`BATCH_CONCURRENCY`）执行：`预拉镜像 → create（限额/网络/环境/卷，label devcapsule=managed，restart=unless-stopped）→ start → 健康检查`（docker exec 在容器内探测 HTTP 端口，30s）
 3. 已有容器默认跳过（可勾选强制重建），失败任务记录可重试
-4. 建容器时注入 `OPENCODE_SERVER_USERNAME/PASSWORD/BASE_PATH`（每容器独立 24 位随机密码，双层认证）与 `OPENCODE_WORKDIR`；卷：`code-{username}`（工作区）+ `ocdata-{username}`（会话数据）
+4. 建容器时注入 `OPENCODE_SERVER_USERNAME/PASSWORD`（每容器独立 24 位随机密码，双层认证）与 `OPENCODE_WORKDIR`；卷：`code-{username}`（工作区）+ `ocdata-{username}`（会话数据）
 5. 用户与容器一一对应：删除用户即移除其容器；批量操作（重建/重启/停止/删除）直接作用于选中的用户及其容器
 
 ### 用户访问
@@ -257,22 +257,22 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 
 ## 应用模板与用户容器
 
-平台内置三个**系统模板**（不可删除），其余工具通过模板机制自由接入——模板与具体工具**解耦**，任意提供 HTTP 端口的 Web 应用都可以下发为每个用户的专属容器。**opencode 是深度集成的参考模板**（基础路径路由 + 双层认证 + SSE/WS 透传），Dify、VS Code、JupyterLab 等任意 Docker 镜像均可接入。
+平台内置四个**系统模板**（不可删除），其余工具通过模板机制自由接入——模板与具体工具**解耦**，任意提供 HTTP 端口的 Web 应用都可以下发为每个用户的专属容器。**opencode 是深度集成的参考模板**（双层认证 + SSE/WS 透传，代理按根路径原样转发），Dify、VS Code、JupyterLab 等任意 Docker 镜像均可接入。
 
 | 工具 | 镜像 | 端口 | 启动命令 | 说明 |
 |---|---|---|---|---|
-| **opencode**（系统模板） | `ghcr.io/anomalyco/opencode:latest` | 4096 | `serve --mdns` | AI 辅助编程 IDE，Basic Auth 双层认证 |
+| **opencode**（系统模板） | `ghcr.io/anomalyco/opencode:latest` | 4096 | `opencode serve --mdns` | AI 辅助编程 IDE，Basic Auth 双层认证 |
 | **VS Code**（系统模板） | `codercom/code-server:latest` | 8080 | `code-server --bind-addr 0.0.0.0:8080 --auth none` | 浏览器版 VS Code，经典编程教学环境 |
 | **JupyterLab**（系统模板） | `jupyter/base-notebook:latest` | 8888 | —（`NOTEBOOK_ARGS` 关闭 token/password） | 数据科学 / Python 教学笔记本 |
-| **Dify** | `langgenius/dify` | 3000 | — | LLM 应用搭建平台（LLMOps），用户可视化编排 AI 应用 |
+| **Dify** | `jsonbored/dify-aio` | 8080 | — | LLM 应用搭建平台（全合一版本），用户可视化编排 AI 应用 |
 
 > 上表仅为示例，管理员可填入任意镜像，不限于这些。模板按课程/分组选用：同一课程/分组的用户使用同一模板；不同课程可用不同模板，互不影响。
 
 > **多端口场景**：一个模板可配置**主端口 + 任意数量的附加端口**。典型用法是「开发工具一个端口、运行/调试中的应用另占几个端口」——例如模板主端口 4096（opencode 开发工具），附加端口 3000/5173（用户前端 dev server）、8000（后端 API）。用户可同时访问多个服务，全部端口经根路径与 `/port/{port}/` 进入，共享同一容器、同一 volume，无需额外申请。
 
-> **直接使用现成镜像，无需自建定制镜像**：平台只要求镜像暴露 HTTP 端口即可接入。管理员直接填写现有的 Docker 镜像（opencode 官方镜像、code-server、jupyter 等）即可，需要额外配置时通过模板的**启动命令 / 环境变量**完成，不需要自己写 Dockerfile。仓库 `images/student/` 仅为可选示例（在官方镜像上预装 python/node/git，内置 opencode 配置 `autoupdate: false`；其基础镜像仍为 `:latest`，生产应改为固定 tag）。
+> **直接使用现成镜像，无需自建定制镜像**：平台只要求镜像暴露 HTTP 端口即可接入。管理员直接填写现有的 Docker 镜像（opencode 官方镜像、code-server、jupyter 等）即可，需要额外配置时通过模板的**启动命令 / 环境变量**完成，不需要自己写 Dockerfile。
 
-> **其它工具接入说明**：opencode 依赖容器内 `OPENCODE_SERVER_BASE_PATH` 环境变量自行处理 URL 前缀，代理无需改写。Dify、code-server 等若支持 URL 前缀 / 代理友好可直接套用；不支持前缀路由的工具需要在代理层做路径改写或独立反代配置（见「已知风险与 FAQ」）。
+> **其它工具接入说明**：代理按根路径**原样转发**，工具以根路径 + 根相对资源提供服务即可直接接入（opencode、code-server、JupyterLab 均如此）。Dify 等若以子路径部署或依赖固定前缀，需要在代理层做路径改写或独立反代配置（见「已知风险与 FAQ」）。
 
 ## 代理层要求
 
@@ -354,7 +354,6 @@ DevCapsule/
 │       ├── proxy/            # 反向代理（SSE/WS 透传、Basic Auth 上游、/port/ 路由、访问日志）
 │       └── store/            # 存储接口 + PostgreSQL / 内存实现
 ├── frontend/                 # Vue3 管理台 + 用户门户（vite 构建到 backend/internal/api/web/dist）
-├── images/student/           # （可选）自定义工具镜像示例——平台直接用现成镜像，无需自建
 ├── deploy/nginx.conf         # 生产 nginx 反代（SSE/WS 透传）
 └── e2e/run.sh                # 端到端测试脚本（登录→建号→建容器→代理→改密→统计）
 ```
@@ -374,8 +373,7 @@ go test ./...        # 单元 + 集成测试（代理 SSE/WS、鉴权、批量�
 go vet ./...         # 静态检查
 go build ./cmd/server
 
-# 端到端测试（需 docker compose up -d 且已建 user-net；先构建 e2e 用镜像）
-docker build -t devcapsule/student:1 images/student
+# 端到端测试（需 docker compose up -d 且已建 user-net；测试模板直接使用官方镜像，无需自建）
 bash e2e/run.sh      # 覆盖：登录 → 建模板 → 批量建号 → 批量建容器 → 学生访问代理 → 批量操作 → 改密 → Dashboard 统计
 ```
 
@@ -387,12 +385,12 @@ bash e2e/run.sh      # 覆盖：登录 → 建模板 → 批量建号 → 批量
 
 ## 已知风险与 FAQ
 
-1. **opencode 版本**：系统模板默认 `:latest`，`--base-path`/`OPENCODE_SERVER_BASE_PATH` 较新，生产建议锁定固定版本并 `autoupdate: false`，升级前先在测试环境验证代理
+1. **opencode 版本**：系统模板默认 `:latest`，生产建议锁定固定版本并 `autoupdate: false`，升级前先在测试环境验证代理
 2. **SSE 断流**：经 nginx + Go 反代后 stream 稳定性需重点测试（务必 `proxy_buffering off`）
 3. **macOS 开发机**：Docker Desktop 需手动提高 VM 内存/CPU，一次跑 50 容器本地吃力 → 生产建议 Linux 服务器
 4. **成本**：AI 用量统计不在平台范围，LLM Key 由各镜像/工具自行配置，平台不参与
 5. **用户终端外网访问**：opencode 内置终端允许用户安装依赖/访问外网，属预期行为；如需收紧用网络层 egress 控制
-6. **任意镜像兼容性**：平台本身只要求镜像暴露 HTTP 端口即可接入，且支持多端口。opencode 因支持基础路径路由、深度集成而开箱即用；code-server（系统模板通过 `--auth none` + 代理双层认证接入）、Dify 等不支持前缀的工具，需要代理层路径改写或独立反代配置（基础路径剥离、静态资源相对路径、Cookie 域等，见里程碑 M5）
+6. **任意镜像兼容性**：平台本身只要求镜像暴露 HTTP 端口即可接入，且支持多端口。opencode、code-server（系统模板通过 `--auth none` + 代理双层认证接入）、JupyterLab 均以根路径提供服务、开箱即用；Dify 等以子路径部署或不支持根路径直连的工具，需要代理层路径改写或独立反代配置（基础路径剥离、静态资源相对路径、Cookie 域等，见里程碑 M5）
 
 ## 里程碑
 

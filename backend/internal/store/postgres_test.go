@@ -67,7 +67,7 @@ func TestPostgresCRUD(t *testing.T) {
 	tpl := &model.Template{
 		ID:           model.NewID(),
 		Name:         "pg-tpl" + model.NewID()[:6],
-		Image:        "devcapsule/student:1",
+		Image:        "ghcr.io/anomalyco/opencode:latest",
 		InternalPort: 4096,
 		ExtraPorts:   []int{3000, 5173},
 		Envs:         map[string]string{"K": "V"},

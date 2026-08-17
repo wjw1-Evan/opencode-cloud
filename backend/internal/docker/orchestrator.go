@@ -77,14 +77,12 @@ func (o *Orchestrator) Provision(ctx context.Context, user *model.User, tpl *mod
 		return nil, err
 	}
 
-	basePath := "/u/" + user.Username
 	env := map[string]string{}
 	for k, v := range tpl.Envs {
 		env[k] = v
 	}
 	env["OPENCODE_SERVER_USERNAME"] = "opencode"
 	env["OPENCODE_SERVER_PASSWORD"] = secret
-	env["OPENCODE_SERVER_BASE_PATH"] = basePath
 	env["OPENCODE_WORKDIR"] = tpl.WorkspaceDir
 
 	workDir := tpl.WorkspaceDir
@@ -113,6 +111,7 @@ func (o *Orchestrator) Provision(ctx context.Context, user *model.User, tpl *mod
 		PidsLimit:     128,
 		WorkDir:       workDir,
 		Volumes:       volumes,
+		RunUser:       tpl.RunUser,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create container: %w", err)

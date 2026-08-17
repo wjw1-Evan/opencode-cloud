@@ -84,6 +84,7 @@ type ContainerConfig struct {
 	PidsLimit     int64
 	WorkDir       string
 	Volumes       []string // "name:path" pairs
+	RunUser       string   // UID/GID to run as (e.g. "1000" or "1000:1000")
 }
 
 // CreateContainer builds and starts a container on the shared network.
@@ -110,6 +111,9 @@ func (c *Client) CreateContainer(ctx context.Context, cfg ContainerConfig) (id s
 			"devcapsule": "managed",
 		},
 	}
+	if cfg.RunUser != "" {
+		res.User = cfg.RunUser
+	}
 	hostCfg := &container.HostConfig{
 		NetworkMode: container.NetworkMode(cfg.Network),
 		Resources: container.Resources{
@@ -134,6 +138,7 @@ func (c *Client) CreateContainer(ctx context.Context, cfg ContainerConfig) (id s
 		return "", err
 	}
 	if err := c.cli.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
+		_ = c.cli.ContainerRemove(ctx, created.ID, container.RemoveOptions{Force: true, RemoveVolumes: false})
 		return "", err
 	}
 	return created.ID, nil

@@ -42,7 +42,7 @@ var systemTemplates = []model.Template{
 		CPULimit:     0.5,
 		MemLimit:     1 << 30,
 		WorkspaceDir: "/workspace",
-		Command:      []string{"serve", "--mdns"},
+		Command:      []string{"opencode", "serve", "--mdns"},
 		IsSystem:     true,
 	},
 	{
@@ -66,6 +66,17 @@ var systemTemplates = []model.Template{
 		CPULimit:     0.5,
 		MemLimit:     1 << 30,
 		WorkspaceDir: "/home/jovyan",
+		IsSystem:     true,
+	},
+	{
+		Name:         "dify",
+		Image:        "jsonbored/dify-aio:latest",
+		InternalPort: 8080,
+		Envs:         map[string]string{},
+		CPULimit:     1.0,
+		MemLimit:     2 << 30,
+		WorkspaceDir: "/appdata",
+		RunUser:      "1000",
 		IsSystem:     true,
 	},
 }
@@ -193,6 +204,9 @@ func (s *Server) handleUpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	if tpl.Command != nil {
 		old.Command = tpl.Command
+	}
+	if tpl.RunUser != "" {
+		old.RunUser = tpl.RunUser
 	}
 	if err := s.st.UpdateTemplate(r.Context(), old); err != nil {
 		writeError(w, http.StatusInternalServerError, "db error")

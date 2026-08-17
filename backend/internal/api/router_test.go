@@ -359,7 +359,7 @@ func TestTemplatesCRUD(t *testing.T) {
 	token := s.login(t, "admin", "admin123")
 
 	rec := s.do(t, "POST", "/platform/admin/templates", token,
-		`{"name":"student","image":"devcapsule/student:1","internal_port":4096,"extra_ports":[3000,5173,3000,0],"cpu_limit":0.5,"mem_limit":1073741824}`)
+		`{"name":"student","image":"ghcr.io/anomalyco/opencode:latest","internal_port":4096,"extra_ports":[3000,5173,3000,0],"cpu_limit":0.5,"mem_limit":1073741824}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("create template failed: %d %s", rec.Code, rec.Body.String())
 	}
