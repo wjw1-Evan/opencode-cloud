@@ -7,6 +7,15 @@ import (
 	"devcapsule/backend/internal/model"
 )
 
+type AccessLogsSummary struct {
+	Count       int64
+	Bytes       int64
+	LatencySum  int64
+	Last        *time.Time
+	Online      int64
+	Last24H     [24]int64
+}
+
 type Store interface {
 	Close() error
 	Migrate(ctx context.Context) error
@@ -15,6 +24,7 @@ type Store interface {
 	GetUserByID(ctx context.Context, id string) (*model.User, error)
 	GetUserByUsername(ctx context.Context, username string) (*model.User, error)
 	ListUsers(ctx context.Context) ([]*model.User, error)
+	ListUsersByIDs(ctx context.Context, ids []string) ([]*model.User, error)
 	UpdateUser(ctx context.Context, u *model.User) error
 	DeleteUser(ctx context.Context, id string) error
 	CountUsers(ctx context.Context) (int64, error)
@@ -23,6 +33,7 @@ type Store interface {
 	GetContainerByUserID(ctx context.Context, userID string) (*model.Container, error)
 	GetContainerByID(ctx context.Context, id string) (*model.Container, error)
 	ListContainers(ctx context.Context) ([]*model.Container, error)
+	ListContainersByUserIDs(ctx context.Context, userIDs []string) ([]*model.Container, error)
 	UpdateContainer(ctx context.Context, c *model.Container) error
 	DeleteContainerByUserID(ctx context.Context, userID string) error
 
@@ -38,4 +49,5 @@ type Store interface {
 	StatsContainersByStatus(ctx context.Context) (map[model.ContainerStatus]int64, error)
 	LastAccess(ctx context.Context, userID string) (*time.Time, error)
 	ExpireUsers(ctx context.Context, now time.Time) (int64, error)
+	AccessLogsSummary(ctx context.Context, since time.Time, onlineWindow time.Duration) (*AccessLogsSummary, error)
 }

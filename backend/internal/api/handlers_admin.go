@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"devcapsule/backend/internal/auth"
@@ -81,15 +82,39 @@ func (s *Server) handleBatchUsers(w http.ResponseWriter, r *http.Request) {
 	var created []*model.User
 	var skipped []string
 	now := time.Now().UTC()
-	for _, acc := range accounts {
+
+	// Hash passwords concurrently (argon2 is CPU-bound) with a bounded pool.
+	hashes := make([]string, len(accounts))
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	var hashErr error
+	var hashErrMu sync.Mutex
+	for i, acc := range accounts {
+		wg.Add(1)
+		go func(i int, pw string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			h, err := auth.HashPassword(pw)
+			if err != nil {
+				hashErrMu.Lock()
+				hashErr = err
+				hashErrMu.Unlock()
+				return
+			}
+			hashes[i] = h
+		}(i, acc.Password)
+	}
+	wg.Wait()
+	if hashErr != nil {
+		writeError(w, http.StatusInternalServerError, "hash password")
+		return
+	}
+
+	for i, acc := range accounts {
 		if taken[acc.Username] {
 			skipped = append(skipped, acc.Username)
 			continue
-		}
-		hash, err := auth.HashPassword(acc.Password)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "hash password")
-			return
 		}
 		var expires *time.Time
 		if req.ExpiresInDays > 0 {
@@ -99,7 +124,7 @@ func (s *Server) handleBatchUsers(w http.ResponseWriter, r *http.Request) {
 		u := &model.User{
 			ID:            model.NewID(),
 			Username:      acc.Username,
-			PasswordHash:  hash,
+			PasswordHash:  hashes[i],
 			PasswordPlain: acc.Password,
 			Role:          model.RoleUser,
 			Status:        model.StatusActive,
@@ -242,10 +267,22 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results := make([]batchUserActionResult, 0, len(req.UserIDs))
+	// Batch-fetch users and containers up front to avoid per-user queries.
+	users, _ := s.st.ListUsersByIDs(r.Context(), req.UserIDs)
+	byID := map[string]*model.User{}
+	for _, u := range users {
+		byID[u.ID] = u
+	}
+	recs, _ := s.st.ListContainersByUserIDs(r.Context(), req.UserIDs)
+	recByUser := map[string]*model.Container{}
+	for _, c := range recs {
+		recByUser[c.UserID] = c
+	}
+
 	for _, id := range req.UserIDs {
 		res := batchUserActionResult{OK: true}
-		user, err := s.st.GetUserByID(r.Context(), id)
-		if err != nil {
+		user := byID[id]
+		if user == nil {
 			res.OK = false
 			res.Error = "user not found"
 			results = append(results, res)
@@ -261,7 +298,7 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 
 		switch req.Action {
 		case "delete":
-			if rec, err := s.st.GetContainerByUserID(r.Context(), user.ID); err == nil && rec.ContainerID != "" {
+			if rec := recByUser[id]; rec != nil && rec.ContainerID != "" {
 				if err := s.orch.Remove(r.Context(), rec); err != nil {
 					res.OK = false
 					res.Error = err.Error()
@@ -274,12 +311,13 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		case "start", "restart", "stop":
-			rec, err := s.st.GetContainerByUserID(r.Context(), user.ID)
-			if err != nil {
+			rec := recByUser[id]
+			if rec == nil {
 				res.OK = false
 				res.Error = "no container"
 				break
 			}
+			var err error
 			switch req.Action {
 			case "start":
 				err = s.orch.Start(r.Context(), rec)

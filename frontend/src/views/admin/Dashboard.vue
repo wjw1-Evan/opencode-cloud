@@ -1,10 +1,10 @@
 <template>
   <div>
     <div class="page-head">
-      <h2>总览</h2>
+      <h2>{{ t('navDashboard') }}</h2>
       <div class="head-right">
-        <span class="live"><span class="dot"></span>系统在线</span>
-        <span class="updated" v-if="updatedAt">更新于 {{ updatedAt }}</span>
+        <span class="live"><span class="dot"></span>{{ t('onlineStatus') }}</span>
+        <span class="updated" v-if="updatedAt">{{ t('updatedAt') }} {{ updatedAt }}</span>
       </div>
     </div>
 
@@ -18,11 +18,11 @@
 
     <div class="panels" v-if="stats">
       <div class="panel card">
-        <div class="panel-title">用户状态</div>
+        <div class="panel-title">{{ t('userStatus') }}</div>
         <div class="stack" v-if="hasUsers">
           <div class="stack-seg" v-for="(seg, i) in userSegs" :key="'u' + i"
                :class="seg.cls" :style="{ width: seg.pct + '%' }"
-               :title="`${seg.label}: ${seg.n}（${seg.pct}%）`"></div>
+               :title="`${seg.label}: ${seg.n} (${seg.pct}%)`"></div>
         </div>
         <div class="legend">
           <span v-for="(seg, i) in userSegs" :key="'l' + i" class="legend-item">
@@ -30,11 +30,11 @@
           </span>
         </div>
         <div class="divider"></div>
-        <div class="panel-title sub">容器状态</div>
+        <div class="panel-title sub">{{ t('containerStatus') }}</div>
         <div class="stack" v-if="hasContainers">
           <div class="stack-seg" v-for="(seg, i) in contSegs" :key="'c' + i"
                :class="seg.cls" :style="{ width: seg.pct + '%' }"
-               :title="`${seg.label}: ${seg.n}（${seg.pct}%）`"></div>
+               :title="`${seg.label}: ${seg.n} (${seg.pct}%)`"></div>
         </div>
         <div class="legend">
           <span v-for="(seg, i) in contSegs" :key="'cl' + i" class="legend-item">
@@ -44,110 +44,119 @@
       </div>
 
       <div class="panel card">
-        <div class="panel-title">近 24 小时访问趋势</div>
+        <div class="panel-title">{{ t('trend24h') }}</div>
         <div class="chart">
           <div class="bar" v-for="(v, i) in stats.requests.last24h" :key="i"
                :style="{ height: barH(v) + '%' }"
                :class="{ peak: v > 0 && v === max24h }"
-               :title="hourLabel(i) + '时：' + v + ' 次'">
+               :title="hourLabel(i) + ':00 — ' + v">
             <span class="bar-val" v-if="v > 0 && v === max24h">{{ v }}</span>
           </div>
         </div>
         <div class="axis">
-          <span>0时</span><span>6时</span><span>12时</span><span>18时</span><span>23时</span>
+          <span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
         </div>
       </div>
 
       <div class="panel card">
-        <div class="panel-title">实时资源占用</div>
+        <div class="panel-title">{{ t('realtimeResource') }}</div>
         <div class="res-row">
-          <div class="res-label">CPU 总用量</div>
-          <div class="res-value mono">{{ stats.resources.cpu_cores.toFixed(2) }} <small>核</small></div>
+          <div class="res-label">{{ t('cpuUsage') }}</div>
+          <div class="res-value mono">{{ stats.resources.cpu_cores.toFixed(2) }} <small>{{ t('core') }}</small></div>
         </div>
         <div class="res-row">
-          <div class="res-label">内存占用</div>
+          <div class="res-label">{{ t('memUsage') }}</div>
           <div class="res-value mono">{{ fmtBytes(stats.resources.mem_bytes) }}
             <small>/ {{ fmtBytes(stats.resources.mem_limit) }}</small></div>
         </div>
         <div class="bar-track">
           <div class="bar-fill mem" :style="{ width: memPct + '%' }"></div>
         </div>
-        <div class="res-sub mono">{{ memPct.toFixed(1) }}% 已用 · 运行中 {{ stats.containers.running }}/{{ stats.containers.total }} 容器</div>
+        <div class="res-sub mono">{{ memPct.toFixed(1) }}% {{ t('memUsed') }} · {{ t('runningContainersLabel') }} {{ stats.containers.running }}/{{ stats.containers.total }} {{ t('containers') }}</div>
         <div class="divider"></div>
         <div class="res-row">
-          <div class="res-label">在线用户</div>
-          <div class="res-value mono">{{ stats.requests.online }} <small>最近5分钟</small></div>
+          <div class="res-label">{{ t('onlineUsers') }}</div>
+          <div class="res-value mono">{{ stats.requests.online }} <small>{{ t('recent5min') }}</small></div>
         </div>
         <div class="res-row">
-          <div class="res-label">平均响应</div>
+          <div class="res-label">{{ t('avgResponse') }}</div>
           <div class="res-value mono">{{ stats.requests.avg_latency_ms.toFixed(0) }} <small>ms</small></div>
         </div>
         <div class="res-row">
-          <div class="res-label">镜像模板</div>
+          <div class="res-label">{{ t('templateCount') }}</div>
           <div class="res-value mono">{{ stats.templates.total }}</div>
         </div>
         <div class="res-row">
-          <div class="res-label">空闲自动停止</div>
-          <div class="res-value mono">{{ stats.idle_timeout.minutes > 0 ? stats.idle_timeout.minutes + ' 分钟' : '关闭' }}</div>
+          <div class="res-label">{{ t('idleStop') }}</div>
+          <div class="res-value mono">{{ stats.idle_timeout.minutes > 0 ? stats.idle_timeout.minutes + ' ' + t('minute') : t('off') }}</div>
         </div>
       </div>
 
       <div class="panel card">
-        <div class="panel-title">课程分布</div>
+        <div class="panel-title">{{ t('courseDistribution') }}</div>
         <div class="course" v-for="c in courses" :key="c.course || '_'">
           <div class="course-head">
-            <span class="course-name">{{ c.course || '未分组' }}</span>
-            <span class="course-meta mono">{{ c.running }}/{{ c.users }} 运行中</span>
+            <span class="course-name">{{ c.course || t('ungrouped') }}</span>
+            <span class="course-meta mono">{{ c.running }}/{{ c.users }} {{ t('runningContainersLabel') }}</span>
           </div>
           <div class="bar-track">
             <div class="bar-fill course" :style="{ width: coursePct(c) + '%' }"></div>
           </div>
         </div>
-        <p v-if="!courses.length" class="empty">暂无用户，请先批量建号</p>
+        <p v-if="!courses.length" class="empty">{{ t('noUsers') }}</p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
 import { api, fmtBytes } from '../../api'
+
+const { t } = inject('i18n')
 
 const stats = ref(null)
 const updatedAt = ref('')
+const loading = ref(false)
 const POLL_MS = 1000
 let timer = null
 
 async function refresh() {
-  stats.value = await api.dashboard()
-  updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  if (loading.value) return
+  loading.value = true
+  try {
+    stats.value = await api.dashboard()
+    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } finally {
+    loading.value = false
+  }
 }
 
 const cards = computed(() => {
   if (!stats.value) return []
   const s = stats.value
   return [
-    { icon: '◉', label: '用户总数', value: s.users.total },
-    { icon: '●', label: '活跃用户', value: s.users.active },
-    { icon: '◈', label: '在线用户', value: s.requests.online },
-    { icon: '▲', label: '运行中容器', value: s.containers.running },
-    { icon: '▣', label: '容器总数', value: s.containers.total },
-    { icon: '↟', label: '24h 请求', value: s.requests.last24h.reduce((a, b) => a + b, 0) },
-    { icon: '↗', label: '累计访问', value: s.requests.count },
-    { icon: '◆', label: '累计流量', value: fmtBytes(s.requests.bytes), small: true },
+    { icon: '◉', label: t('totalUsers'), value: s.users.total },
+    { icon: '●', label: t('activeUsers'), value: s.users.active },
+    { icon: '◈', label: t('onlineUsers'), value: s.requests.online },
+    { icon: '▲', label: t('runningContainers'), value: s.containers.running },
+    { icon: '▣', label: t('totalContainers'), value: s.containers.total },
+    { icon: '↟', label: t('requests24h'), value: s.requests.last24h.reduce((a, b) => a + b, 0) },
+    { icon: '↗', label: t('totalVisits'), value: s.requests.count },
+    { icon: '◆', label: t('totalTraffic'), value: fmtBytes(s.requests.bytes), small: true },
   ]
 })
 
 const STATUS_META = {
-  active: { label: '启用', cls: 'ok' },
-  disabled: { label: '停用', cls: 'dim' },
-  expired: { label: '过期', cls: 'err' },
-  running: { label: '运行', cls: 'ok' },
-  stopped: { label: '停止', cls: 'dim' },
-  error: { label: '异常', cls: 'err' },
-  creating: { label: '创建中', cls: 'warn' },
-  pending: { label: '待建', cls: 'cyan' },
-  removed: { label: '已删', cls: 'ghost' },
+  active: { label: t('enabled'), cls: 'ok' },
+  disabled: { label: t('disabled'), cls: 'dim' },
+  expired: { label: t('expired'), cls: 'err' },
+  running: { label: t('running'), cls: 'ok' },
+  stopped: { label: t('stopped'), cls: 'dim' },
+  error: { label: t('error'), cls: 'err' },
+  creating: { label: t('creating'), cls: 'warn' },
+  pending: { label: t('pending'), cls: 'cyan' },
+  removed: { label: t('removed'), cls: 'ghost' },
 }
 
 function segs(m, total) {

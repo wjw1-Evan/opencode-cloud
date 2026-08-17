@@ -7,22 +7,22 @@
     <div class="card login-card">
       <div class="brand">
         <div class="logo">◈</div>
-        <h1>DevCapsule <span class="zh">开发胶囊舱</span></h1>
-        <p class="sub">一人一舱，浏览器即开即用</p>
+        <h1>DevCapsule <span v-if="t('brandSub')" class="zh">{{ t('brandSub') }}</span></h1>
+        <p class="sub">{{ t('welcomeSub') }}</p>
       </div>
 
       <form @submit.prevent="submit">
         <div style="margin-bottom: 14px">
-          <label>用户名</label>
-          <input v-model="username" autocomplete="username" required placeholder="请输入用户名" />
+          <label>{{ t('username') }}</label>
+          <input v-model="username" autocomplete="username" :placeholder="t('usernamePlaceholder')" required />
         </div>
         <div style="margin-bottom: 20px">
-          <label>密码</label>
-          <input v-model="password" type="password" autocomplete="current-password" required placeholder="请输入密码" />
+          <label>{{ t('password') }}</label>
+          <input v-model="password" type="password" autocomplete="current-password" :placeholder="t('passwordPlaceholder')" required />
         </div>
         <button class="btn btn-primary submit" type="submit" :disabled="loading">
           <span class="scan" v-if="loading"></span>
-          {{ loading ? '正在接入…' : '进入平台' }}
+          {{ loading ? t('logging') : t('login') }}
         </button>
         <p v-if="error" class="err">{{ error }}</p>
       </form>
@@ -31,9 +31,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, inject, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
+
+const { t } = inject('i18n')
 
 const username = ref('')
 const password = ref('')

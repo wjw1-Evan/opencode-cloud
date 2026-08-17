@@ -16,6 +16,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/dc-static': 'http://localhost:8080',
+      '/platform': 'http://localhost:8080',
     },
   },
 })

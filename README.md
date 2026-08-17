@@ -9,10 +9,11 @@
 - **管理员端**
   - 批量生成用户名/密码：用户名前缀由课程名自动推导（如「Python 基础」→ `python001`），密码随机（默认 12 位，8 位起），已占用用户名自动跳过；可指定到期时间、CPU/内存限额
   - 一键「**生成账号并建容器**」：建号成功即自动为每个用户创建独立容器，浏览器自动下载 `accounts.csv`（含全部明文账号密码）供分发
-  - 批量管理：同一张列表展示用户名/密码/课程/容器名/容器状态/端口，支持按课程筛选 → 勾选用户 → 批量**重建 / 重启 / 停止 / 删除**（幂等，失败可重试）
-  - 镜像模板管理：镜像、主端口 + 附加端口、环境变量、启动命令、资源限额；系统模板内置不可删
+  - 批量管理：同一张列表展示用户名/密码/课程/容器名/容器状态/端口，支持按课程筛选 → 勾选用户 → 批量**启动 / 重建 / 重启 / 停止 / 删除**（幂等，失败可重试，列表自动刷新）
+  - 镜像模板管理：镜像、主端口 + 附加端口、环境变量、启动命令、资源限额、运行用户与附加 capability（适配 Dify 等依赖 root/s6-overlay 的镜像）；系统模板内置不可删
+  - 镜像管理：浏览本机镜像列表（架构/大小/层数）、在线拉取镜像、`docker save` 导出的 tar 包上传导入（≤ 2GB）、删除镜像、查看镜像详情（适合内网/离线环境分发镜像）
   - 账号状态管理（`active / disabled / expired`）与到期自动停用；密码由用户自助修改（门户页「修改密码」），管理员可查看当前密码
-  - 使用统计：总览页看用户/容器状态分布、在线数、近 24h 访问趋势、CPU/内存实时聚合、按课程分布
+  - 使用统计：总览页看用户/容器状态分布、在线数、累计访问/累计流量/平均响应、近 24h 访问趋势、CPU/内存实时聚合、镜像模板数与空闲停止配置、按课程分布
 - **用户端**
   - 网页账号密码登录 → 自动进入自己专属的工具界面（管理员配置的镜像是什么就进什么工具）
   - 代码/数据持久化在专属 volume，容器重启不丢
@@ -108,8 +109,7 @@ export DATABASE_URL="postgres://opencode:opencode@localhost:5432/opencode?sslmod
 export JWT_SECRET="dev-secret"
 cd backend && go run ./cmd/server
 
-# 3. 前端（Vite dev server，仅代理 /api 与 /dc-static；/platform 接口需自行在
-#    vite.config.js 补充代理，或直接访问 :8080 上 embed 的完整平台页面）
+# 3. 前端（Vite dev server，已代理 /api、/dc-static 与 /platform 到 :8080）
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
@@ -131,11 +131,11 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 | 步骤 | 操作 | 说明 |
 |---|---|---|
-| 1 | 建模板 | 填入任意工具镜像、主端口与附加端口、环境变量、启动命令、资源限额（系统内置 opencode / vscode / jupyter 模板） |
+| 1 | 建模板 | 填入任意工具镜像、主端口与附加端口、环境变量、启动命令、资源限额（系统内置 opencode / vscode / jupyter / dify 模板）；需要 root/capability 的镜像可配运行用户与附加 capability |
 | 2 | 批量建号 | 输入课程、数量或显式用户名列表；用户名前缀由课程名自动推导（字母数字小写，如 `Python 基础`→`python001`，`2026 春季班`→`s2026001`），密码随机 12 位（默认），argon2 哈希入库，明文 `accounts.csv` 自动下载 |
 | 3 | 批量建容器 | 「生成账号并建容器」自动完成，或选中用户 + 模板手动执行；后台并发：预拉镜像 → create（限额/网络/env/卷）→ start → 健康检查；已有容器自动跳过，可强制重建 |
-| 4 | 日常管理 | 列表按课程筛选 → 勾选用户 → 批量重建（`containers/batch`，强制重建走 `force`）/重启/停止/删除（`users/batch/action`）；单容器启动走 `containers/{id}/start`；修改密码由用户自助完成，管理员可在列表查看当前密码 |
-| 5 | 看统计 | Dashboard 看总量/活跃/在线、近 24h 访问趋势、CPU/内存实时聚合、课程分布；单个容器可看实时 docker stats |
+| 4 | 日常管理 | 列表按课程筛选（页面自动刷新）→ 勾选用户 → 批量启动/重建（`containers/batch`，强制重建走 `force`）/重启/停止/删除（`users/batch/action`）；单容器启动走 `containers/{id}/start`；修改密码由用户自助完成，管理员可在列表查看当前密码 |
+| 5 | 看统计 | Dashboard 看总量/活跃/在线、近 24h 访问趋势、累计访问/流量/平均响应、CPU/内存实时聚合、模板数与空闲停止配置、课程分布；单个容器可看实时 docker stats |
 | 6 | 到期回收 | 到期账号自动置为 `expired` 并停掉容器；空闲 30 分钟自动停，访问时秒级唤醒 |
 
 ### 用户使用手册
@@ -295,7 +295,7 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 | **opencode**（系统模板） | `ghcr.io/anomalyco/opencode:latest` | 4096 | `serve --mdns` | AI 辅助编程 IDE，Basic Auth 双层认证 |
 | **VS Code**（系统模板） | `codercom/code-server:latest` | 8080 | `code-server --bind-addr 0.0.0.0:8080 --auth none` | 浏览器版 VS Code，经典编程教学环境 |
 | **JupyterLab**（系统模板） | `jupyter/base-notebook:latest` | 8888 | —（`NOTEBOOK_ARGS` 关闭 token/password） | 数据科学 / Python 教学笔记本 |
-| **Dify** | `jsonbored/dify-aio` | 8080 | — | LLM 应用搭建平台（全合一版本），用户可视化编排 AI 应用 |
+| **Dify**（系统模板） | `jsonbored/dify-aio` | 8080 | —（`cap_add` 补 CHOWN/DAC_OVERRIDE 等权限） | LLM 应用搭建平台（全合一版本），用户可视化编排 AI 应用 |
 
 > 上表仅为示例，管理员可填入任意镜像，不限于这些。模板按课程/分组选用：同一课程/分组的用户使用同一模板；不同课程可用不同模板，互不影响。
 
@@ -348,7 +348,8 @@ user_containers  id, user_id(FK, unique), template_id, container_id, container_n
                  internal_port(主端口), secret(容器随机密码), created_at, updated_at
 image_templates  id, name(unique), image, internal_port(主端口), extra_ports(jsonb 附加端口),
                  envs(jsonb), cpu_limit, mem_limit, healthcheck_cmd,
-                 workspace_dir, command(jsonb 启动命令), is_system, created_at
+                 workspace_dir, command(jsonb 启动命令), run_user(运行用户), cap_add(jsonb 附加 capability),
+                 is_system, created_at
 access_logs      id(bigserial), user_id, path, status, bytes, latency_ms, ts
 ```
 
@@ -358,12 +359,14 @@ access_logs      id(bigserial), user_id, path, status, bytes, latency_ms, ts
 
 | 模块 | 接口 |
 |---|---|
+| 初始化 | `GET /platform/auth/initialized`（是否已设置管理员）、`POST /platform/auth/initialize`（首次部署创建管理员，仅一次） |
 | 认证 | `POST /platform/auth/login`（限流）、`POST /platform/auth/refresh`、`GET /platform/auth/logout`、`GET /platform/auth/me`（返回 `user` + `container`（含主/附加端口））、`POST /platform/auth/change-password`（用户自助改密码，新密码 ≥ 8 位） |
-| 用户 | `POST /platform/admin/users/batch`（生成 N 个/显式用户名列表，可带 `course/expires_in_days/限额`，响应含明文账号）、`GET /platform/admin/users`（含当前密码）、`PATCH /platform/admin/users/{id}`（改密码/禁用/延长到期/改课程/限额）、`DELETE /platform/admin/users/{id}`（级联移除容器）、`GET /platform/admin/users/export`（JSON 账号清单）、`POST /platform/admin/users/batch/action`（按 `user_ids` 批量 `delete/restart/stop`） |
+| 用户 | `POST /platform/admin/users/batch`（生成 N 个/显式用户名列表，可带 `course/expires_in_days/限额`，响应含明文账号）、`GET /platform/admin/users`（含当前密码）、`PATCH /platform/admin/users/{id}`（改密码/禁用/延长到期/改课程/限额）、`DELETE /platform/admin/users/{id}`（级联移除容器）、`GET /platform/admin/users/export`（JSON 账号清单）、`POST /platform/admin/users/batch/action`（按 `user_ids` 批量 `start/delete/restart/stop`） |
 | 容器 | `POST /platform/admin/containers/batch`（按 `template_id` + `user_ids`，`force` 可重建）、`GET /platform/admin/containers`（实时状态调和）、`POST /platform/admin/containers/{id}/start\|stop\|restart\|remove`、`GET /platform/admin/containers/{id}/stats`、`GET /platform/admin/containers/stats/all`（各容器实时 Docker stats） |
-| 模板 | `GET/POST /platform/admin/templates`、`GET/PUT/DELETE /platform/admin/templates/{id}`（`internal_port` 主端口 + `extra_ports[]` 附加端口；系统模板不可删） |
-| 统计 | `GET /platform/admin/stats/dashboard`（用户/容器状态分布、在线用户（5 分钟内）、24h 请求趋势、CPU/内存实时聚合、课程分布、模板数、空闲超时配置） |
-| 代理 | `/*` 根路径（JWT 身份识别 + ReverseProxy，学生请求转发到其容器，支持 `/port/{port}/` 附加端口）；`/portal`、`/admin`、`/dc-static/*` 恒为平台 SPA |
+| 模板 | `GET/POST /platform/admin/templates`、`GET/PUT/DELETE /platform/admin/templates/{id}`（`internal_port` 主端口 + `extra_ports[]` 附加端口 + `run_user`/`cap_add`；系统模板不可删） |
+| 镜像 | `GET /platform/admin/images`（本机镜像列表）、`POST /platform/admin/images/pull`（在线拉取）、`POST /platform/admin/images/import`（上传 `docker save` 导出的 tar，≤2GB）、`GET /platform/admin/images/{id}`（详情：架构/OS/层/CMD）、`DELETE /platform/admin/images/{id}` |
+| 统计 | `GET /platform/admin/stats/dashboard`（用户/容器状态分布、在线用户（5 分钟内）、24h 请求趋势、累计访问/流量、平均响应、CPU/内存实时聚合、课程分布、模板数、空闲超时配置） |
+| 代理 | `/*` 根路径（JWT 身份识别 + ReverseProxy，学生请求转发到其容器，支持 `/port/{port}/` 附加端口）；`/portal`、`/admin`、`/initialize`、`/dc-static/*` 恒为平台 SPA |
 | 健康检查 | `GET /api/health` |
 
 ## 项目结构
@@ -379,17 +382,17 @@ DevCapsule/
 │   ├── entrypoint.sh            # 容器启动脚本（初始化 PostgreSQL）
 │   ├── supervisord.conf         # 进程管理配置
 │   ├── nginx.conf               # Nginx 反代配置（SSE/WS 透传）
-│   ├── cmd/server/main.go       # 入口：配置 → 数据库迁移 → Docker → 启动
+│   ├── cmd/server/main.go       # 入口：配置 → 数据库迁移 → seed 系统模板 → Docker → 启动
 │   └── internal/
-│       ├── api/                 # 路由、中间件、handler（含 SPA 静态托管；web/dist 为 embed 前端产物）
+│       ├── api/                 # 路由、中间件、handler（初始化/认证/用户/容器/模板/镜像/统计；web/dist 为 embed 前端产物）
 │       ├── auth/                # JWT（30min access + 24h refresh）、argon2 密码哈希
 │       ├── batch/               # 批量账号生成（课程名推导前缀、随机密码、CSV 导出）
 │       ├── config/              # 环境变量配置
-│       ├── docker/              # Docker SDK 封装、编排（Provision/IdleStop/Expire/Reconcile/Stats/健康检查）
+│       ├── docker/              # Docker SDK 封装、编排（Provision/IdleStop/Expire/Reconcile/Stats/健康检查/镜像管理）
 │       ├── model/               # 数据模型
 │       ├── proxy/               # 反向代理（SSE/WS 透传、Basic Auth 上游、/port/ 路由、访问日志）
 │       └── store/               # 存储接口 + PostgreSQL / 内存实现
-├── frontend/                    # Vue3 管理台 + 用户门户（vite 构建到 backend/internal/api/web/dist）
+├── frontend/                    # Vue3 管理台 + 用户门户（vite 构建到 backend/internal/api/web/dist，中英双语）
 ├── deploy/
 │   └── nginx.conf               # 独立部署时的 nginx 配置（多容器模式）
 └── e2e/run.sh                   # 端到端测试脚本
@@ -398,7 +401,7 @@ DevCapsule/
 ## 技术选型
 
 - **后端**：Go（标准库 net/http + Docker SDK + pgx + golang-jwt + argon2）
-- **前端**：Vue3 + Vite + vue-router（管理台 + 用户门户两个路由区），构建产物 `embed` 进 Go 二进制单文件分发
+- **前端**：Vue3 + Vite + vue-router（管理台 + 用户门户两个路由区，中英双语 i18n），构建产物 `embed` 进 Go 二进制单文件分发
 - **数据库**：PostgreSQL 17（存储层为接口，本地开发可切内存实现）
 - **部署**：单一镜像（PostgreSQL + Nginx + Go API），Supervisor 进程管理，GitHub Actions 自动构建
 - **CI/CD**：GitHub Actions → GitHub Container Registry (ghcr.io)
@@ -412,6 +415,7 @@ go vet ./...         # 静态检查
 go build ./cmd/server
 
 # 端到端测试（需 docker compose up -d 且已建 user-net；测试模板直接使用官方镜像，无需自建）
+# 管理员默认 admin / admin-e2e-pass，可用 ADMIN_USERNAME / ADMIN_PASSWORD 覆盖
 bash e2e/run.sh      # 覆盖：登录 → 建模板 → 批量建号 → 批量建容器 → 学生访问代理 → 批量操作 → 改密 → Dashboard 统计
 ```
 
@@ -426,8 +430,9 @@ docker run -d --name devcapsule -p 80:80 \
   -v pgdata:/var/lib/postgresql/data \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e JWT_SECRET=$(openssl rand -hex 32) \
-  -e ADMIN_PASSWORD=admin123 \
   devcapsule:latest
+
+# 首次访问 http://localhost/ 会自动跳转初始化页面设置管理员账户
 ```
 
 ### CI/CD 自动构建
@@ -452,9 +457,9 @@ docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
 | push PR | `pr-N`, `sha-xxx` | PR 构建不推送，仅验证编译 |
 
 当前实现状态：
-- ✅ Go 后端：认证（JWT + 限流）、批量建号、模板（多端口/环境变量/启动命令）、容器编排（幂等批量/空闲停/到期停/状态调和/实时 stats）、反向代理（SSE/WS、双层认证、多端口路由、访问日志）、后台周期任务
-- ✅ 前端：Vue3 管理台（总览 / 用户与容器 / 镜像模板 / 使用帮助）+ 用户门户（查看状态、打开环境、自助改密），构建产物 embed 进 Go 二进制
-- ✅ 部署：单一镜像（PostgreSQL + Nginx + Go API）、Supervisor 进程管理、GitHub Actions 自动构建
+- ✅ Go 后端：认证（JWT + 限流 + 首次初始化）、批量建号、模板（多端口/环境变量/启动命令/运行用户/capability）、容器编排（幂等批量/空闲停/到期停/状态调和/实时 stats）、镜像管理（拉取/导入/删除/详情）、反向代理（SSE/WS、双层认证、多端口路由、访问日志）、后台周期任务
+- ✅ 前端：Vue3 管理台（总览 / 用户与容器 / 镜像模板 / 镜像管理 / 使用帮助）+ 用户门户（查看状态、打开环境、自助改密），中英双语，构建产物 embed 进 Go 二进制
+- ✅ 部署：单一镜像（PostgreSQL + Nginx + Go API）、Supervisor 进程管理、GitHub Actions 自动构建（linux/amd64 + arm64）
 - ✅ CI/CD：GitHub Actions → GitHub Container Registry (ghcr.io)
 - 🚧 待完善：生产 TLS 全链路验证、通用工具路径改写（见里程碑）
 
@@ -465,12 +470,13 @@ docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
 3. **macOS 开发机**：Docker Desktop 需手动提高 VM 内存/CPU，一次跑 50 容器本地吃力 → 生产建议 Linux 服务器
 4. **成本**：AI 用量统计不在平台范围，LLM Key 由各镜像/工具自行配置，平台不参与
 5. **用户终端外网访问**：opencode 内置终端允许用户安装依赖/访问外网，属预期行为；如需收紧用网络层 egress 控制
-6. **任意镜像兼容性**：平台本身只要求镜像暴露 HTTP 端口即可接入，且支持多端口。opencode、code-server（系统模板通过 `--auth none` + 代理双层认证接入）、JupyterLab 均以根路径提供服务、开箱即用；Dify 等以子路径部署或不支持根路径直连的工具，需要代理层路径改写或独立反代配置（基础路径剥离、静态资源相对路径、Cookie 域等，见里程碑 M5）
+6. **内网/离线环境拉不到镜像**：在能联网的机器上 `docker save` 导出 tar 包，然后在「镜像管理」→ 上传镜像导入（≤ 2GB），或直接在「镜像管理」→ 拉取镜像在线下载
+7. **任意镜像兼容性**：平台本身只要求镜像暴露 HTTP 端口即可接入，且支持多端口。opencode、code-server（系统模板通过 `--auth none` + 代理双层认证接入）、JupyterLab 均以根路径提供服务、开箱即用；Dify 等以子路径部署或不支持根路径直连的工具，需要代理层路径改写或独立反代配置（基础路径剥离、静态资源相对路径、Cookie 域等，见里程碑 M5）
 
 ## 里程碑
 
 - **M1**（✅ 完成）：Go 后端——认证、批量建号、容器编排、模板、统计、后台周期任务
 - **M2**（✅ 完成）：反向代理（SSE/WS 透传、双层认证、多端口路由）+ 用户门户
-- **M3**（✅ 完成）：管理台（总览 / 用户与容器 / 模板 / 帮助）+ 空闲自动停 + 账号过期
+- **M3**（✅ 完成）：管理台（总览 / 用户与容器 / 模板 / 镜像管理 / 帮助）+ 空闲自动停 + 账号过期 + 中英双语
 - **M4**（🟡 部分完成）：登录限流、`access_logs` 审计已实现；TLS 由 nginx 承担，生产全链路验证待做
 - **M5**（🚧 待做）：通用工具路径改写——Dify / JupyterLab 等不支持前缀路由的工具，代理层路径改写与独立鉴权适配

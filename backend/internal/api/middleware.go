@@ -114,6 +114,7 @@ type loginLimiter struct {
 	hits   map[string]*window
 	window time.Duration
 	max    int
+	lastGC time.Time
 }
 
 type window struct {
@@ -129,6 +130,15 @@ func (l *loginLimiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
+	// Opportunistic GC: evict expired windows to bound memory growth.
+	if now.Sub(l.lastGC) >= l.window {
+		for k, w := range l.hits {
+			if now.After(w.reset) {
+				delete(l.hits, k)
+			}
+		}
+		l.lastGC = now
+	}
 	w, ok := l.hits[key]
 	if !ok || now.After(w.reset) {
 		l.hits[key] = &window{count: 1, reset: now.Add(l.window)}

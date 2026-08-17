@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"devcapsule/backend/internal/model"
+	"devcapsule/backend/internal/store"
 )
 
 func TestHealth(t *testing.T) {
@@ -677,5 +678,255 @@ func TestStudentRootGetsContainerNotSPA(t *testing.T) {
 	rec := s.do(t, "GET", "/hello", token, "")
 	if !strings.Contains(rec.Body.String(), "container on /hello") {
 		t.Fatalf("expected container response, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRefreshToken(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "stu001", "pass12345", "user")
+
+	// login to get refresh token
+	rec := s.do(t, "POST", "/platform/auth/login", "", `{"username":"stu001","password":"pass12345"}`)
+	var loginResp struct {
+		Data struct {
+			Refresh string `json:"refresh"`
+			Access  string `json:"access"`
+		} `json:"data"`
+	}
+	decodeJSON(t, rec, &loginResp)
+	if loginResp.Data.Refresh == "" {
+		t.Fatal("missing refresh token")
+	}
+
+	// use refresh token
+	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"`+loginResp.Data.Refresh+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var refreshResp struct {
+		Data struct {
+			Access string `json:"access"`
+		} `json:"data"`
+	}
+	decodeJSON(t, rec, &refreshResp)
+	if refreshResp.Data.Access == "" {
+		t.Fatal("missing new access token")
+	}
+
+	// invalid refresh token
+	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"bad-token"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+
+	// disabled user refresh should fail
+	disabled := addUser(t, st, "disabled", "pass12345", "user")
+	disabled.Status = model.StatusDisabled
+	st.UpdateUser(t.Context(), disabled)
+	_, refresh, _ := s.tm.Issue(disabled.ID, disabled.Username, string(disabled.Role))
+	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"`+refresh+`"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for disabled, got %d", rec.Code)
+	}
+}
+
+func TestInitialized(t *testing.T) {
+	s, st, _ := newTestServer(t)
+
+	// no admin yet
+	rec := s.do(t, "GET", "/platform/auth/initialized", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("failed: %d", rec.Code)
+	}
+	var resp struct {
+		Data struct {
+			Initialized bool `json:"initialized"`
+		} `json:"data"`
+	}
+	decodeJSON(t, rec, &resp)
+	if resp.Data.Initialized {
+		t.Fatal("expected not initialized")
+	}
+
+	// create admin
+	addUser(t, st, "admin", "admin123", "admin")
+	rec = s.do(t, "GET", "/platform/auth/initialized", "", "")
+	decodeJSON(t, rec, &resp)
+	if !resp.Data.Initialized {
+		t.Fatal("expected initialized after admin created")
+	}
+}
+
+func TestInitialize(t *testing.T) {
+	s, _, _ := newTestServer(t)
+
+	// create initial admin
+	rec := s.do(t, "POST", "/platform/auth/initialize", "", `{"username":"admin","password":"admin12345"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("initialize failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// login with the new admin
+	rec = s.do(t, "POST", "/platform/auth/login", "", `{"username":"admin","password":"admin12345"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login with new admin failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// second initialize should fail (already initialized)
+	rec = s.do(t, "POST", "/platform/auth/initialize", "", `{"username":"admin2","password":"admin12345"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+
+	// missing username
+	st2 := NewMemoryServer(t)
+	rec2 := st2.do("POST", "/platform/auth/initialize", `{"password":"admin12345"}`)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing username, got %d", rec2.Code)
+	}
+
+	// short password
+	st3 := NewMemoryServer(t)
+	rec3 := st3.do("POST", "/platform/auth/initialize", `{"username":"admin","password":"short"}`)
+	if rec3.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for short password, got %d", rec3.Code)
+	}
+}
+
+// NewMemoryServer creates a test Server with a fresh in-memory store and no admin.
+func NewMemoryServer(t *testing.T) *testServerHelper {
+	t.Helper()
+	s, st, _ := newTestServer(t)
+	return &testServerHelper{t: t, s: s, st: st}
+}
+
+type testServerHelper struct {
+	t  *testing.T
+	s  *Server
+	st store.Store
+}
+
+func (h *testServerHelper) do(method, path, body string) *httptest.ResponseRecorder {
+	h.t.Helper()
+	var r *http.Request
+	if body != "" {
+		r = httptest.NewRequest(method, path, strings.NewReader(body))
+	} else {
+		r = httptest.NewRequest(method, path, nil)
+	}
+	rec := httptest.NewRecorder()
+	h.s.Router().ServeHTTP(rec, r)
+	return rec
+}
+
+func TestContainerActionNotFound(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	token := s.login(t, "admin", "admin123")
+
+	rec := s.do(t, "POST", "/platform/admin/containers/nonexistent/start", token, "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestContainerActionUnknown(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	token := s.login(t, "admin", "admin123")
+
+	// create a container record first
+	user := addUser(t, st, "stu001", "pass12345", "user")
+	st.CreateContainer(t.Context(), &model.Container{
+		ID: model.NewID(), UserID: user.ID, TemplateID: "t1",
+		ContainerID: "fake", ContainerName: "user-stu001",
+		Status: model.ContainerStopped,
+	})
+	containerID := model.NewID()
+	rec := s.do(t, "GET", "/platform/admin/containers", token, "")
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	decodeJSON(t, rec, &list)
+	if len(list.Data) > 0 {
+		containerID = list.Data[0].ID
+	}
+
+	rec = s.do(t, "POST", "/platform/admin/containers/"+containerID+"/explode", token, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unknown action, got %d", rec.Code)
+	}
+}
+
+func TestImageHandlersDockerUnavailable(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	token := s.login(t, "admin", "admin123")
+
+	rec := s.do(t, "GET", "/platform/admin/images", token, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("list images: expected 503, got %d", rec.Code)
+	}
+
+	rec = s.do(t, "POST", "/platform/admin/images/pull", token, `{"image":"nginx"}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("pull image: expected 503, got %d", rec.Code)
+	}
+
+	rec = s.do(t, "GET", "/platform/admin/images/fakeid", token, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("get image: expected 503, got %d", rec.Code)
+	}
+
+	rec = s.do(t, "DELETE", "/platform/admin/images/fakeid", token, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("delete image: expected 503, got %d", rec.Code)
+	}
+}
+
+func TestContainerStatsNotFound(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	token := s.login(t, "admin", "admin123")
+
+	rec := s.do(t, "GET", "/platform/admin/containers/nonexistent/stats", token, "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestAllContainerStatsEmpty(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	token := s.login(t, "admin", "admin123")
+
+	rec := s.do(t, "GET", "/platform/admin/containers/stats/all", token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data json.RawMessage `json:"data"`
+	}
+	decodeJSON(t, rec, &resp)
+	if string(resp.Data) != "[]" {
+		t.Fatalf("expected empty list, got %s", resp.Data)
+	}
+}
+
+func TestDeleteSystemTemplateBlocked(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	token := s.login(t, "admin", "admin123")
+
+	// create system template
+	st.CreateTemplate(t.Context(), &model.Template{
+		ID: "sys1", Name: "system-tpl", Image: "x", InternalPort: 4096, IsSystem: true,
+	})
+
+	rec := s.do(t, "DELETE", "/platform/admin/templates/sys1", token, "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for system template, got %d", rec.Code)
 	}
 }

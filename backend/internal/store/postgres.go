@@ -161,6 +161,28 @@ FROM users ORDER BY course, username`)
 	return out, rows.Err()
 }
 
+func (p *Postgres) ListUsersByIDs(ctx context.Context, ids []string) ([]*model.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := p.db.QueryContext(ctx, `
+SELECT id, username, password_hash, password_plain, role, status, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
+FROM users WHERE id = ANY($1) ORDER BY course, username`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*model.User
+	for rows.Next() {
+		u, err := p.scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 func (p *Postgres) UpdateUser(ctx context.Context, u *model.User) error {
 	res, err := p.db.ExecContext(ctx, `
 UPDATE users SET password_hash=$2, password_plain=$3, role=$4, status=$5, course=$6, expires_at=$7, cpu_limit=$8, mem_limit=$9, container_id=$10, updated_at=now()
@@ -226,6 +248,28 @@ func (p *Postgres) ListContainers(ctx context.Context) ([]*model.Container, erro
 	rows, err := p.db.QueryContext(ctx, `
 SELECT id, user_id, template_id, container_id, container_name, status, internal_port, secret, created_at, updated_at
 FROM user_containers ORDER BY container_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*model.Container
+	for rows.Next() {
+		c, err := p.scanContainer(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) ListContainersByUserIDs(ctx context.Context, userIDs []string) ([]*model.Container, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := p.db.QueryContext(ctx, `
+SELECT id, user_id, template_id, container_id, container_name, status, internal_port, secret, created_at, updated_at
+FROM user_containers WHERE user_id = ANY($1) ORDER BY container_name`, userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -430,6 +474,43 @@ func (p *Postgres) LastAccess(ctx context.Context, userID string) (*time.Time, e
 		return nil, err
 	}
 	return &t, nil
+}
+
+func (p *Postgres) AccessLogsSummary(ctx context.Context, since time.Time, onlineWindow time.Duration) (*AccessLogsSummary, error) {
+	var s AccessLogsSummary
+	err := p.db.QueryRowContext(ctx, `
+SELECT
+  count(*),
+  COALESCE(sum(bytes), 0),
+  COALESCE(sum(latency_ms), 0),
+  max(ts),
+  count(DISTINCT user_id) FILTER (WHERE ts >= $2 AND user_id IS NOT NULL AND user_id <> '')
+FROM access_logs WHERE ts >= $1`, since, time.Now().Add(-onlineWindow)).Scan(
+		&s.Count, &s.Bytes, &s.LatencySum, &s.Last, &s.Online)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := p.db.QueryContext(ctx, `
+SELECT extract(hour FROM (now() - ts))::int AS hours_ago, count(*)
+FROM access_logs
+WHERE ts >= $1
+GROUP BY 1`, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hoursAgo int
+		var n int64
+		if err := rows.Scan(&hoursAgo, &n); err != nil {
+			return nil, err
+		}
+		idx := 23 - hoursAgo
+		if idx >= 0 && idx < 24 {
+			s.Last24H[idx] = n
+		}
+	}
+	return &s, rows.Err()
 }
 
 func (p *Postgres) ExpireUsers(ctx context.Context, now time.Time) (int64, error) {

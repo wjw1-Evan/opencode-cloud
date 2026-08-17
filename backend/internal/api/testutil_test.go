@@ -24,10 +24,8 @@ func newTestServer(t *testing.T) (*Server, *store.Memory, *auth.TokenManager) {
 	st := store.NewMemory()
 	tm := auth.NewTokenManager("test-secret")
 	cfg := config.Config{
-		JWTSecret:     "test-secret",
-		AdminUsername: "admin",
-		AdminPassword: "admin123",
-		NetworkName:   "testnet",
+		JWTSecret:   "test-secret",
+		NetworkName: "testnet",
 	}
 	dc := &docker.Client{}
 	orch := docker.NewOrchestrator(dc, st, cfg.NetworkName, 5)

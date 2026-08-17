@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import './style.css'
 import { api } from './api'
+import { useI18n } from './i18n'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -36,5 +37,7 @@ router.beforeEach(async (to) => {
 })
 
 const app = createApp(App)
+const i18n = useI18n()
+app.provide('i18n', i18n)
 app.use(router)
 app.mount('#app')

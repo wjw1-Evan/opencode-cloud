@@ -5,65 +5,67 @@
 
     <div class="card portal-card">
       <div class="top">
-        <h1>我的开发环境</h1>
-        <button class="btn" @click="logout">退出登录</button>
+        <h1>{{ t('myEnv') }}</h1>
+        <button class="btn" @click="logout">{{ t('logout') }}</button>
       </div>
 
-      <p class="hello">你好，<b class="uname">{{ user.username }}</b></p>
+      <p class="hello">{{ t('hello') }}<b class="uname">{{ user.username }}</b></p>
 
       <div v-if="container" class="status-panel">
         <div class="status-row">
-          <span class="st-label">状态</span>
+          <span class="st-label">{{ t('status') }}</span>
           <span class="badge" :class="container.status">{{ container.status }}</span>
         </div>
         <template v-if="container.status === 'running'">
           <div class="status-row">
-            <span class="st-label">端口</span>
+            <span class="st-label">{{ t('port') }}</span>
             <code>{{ container.internal_port }}{{ (container.extra_ports || []).length ? ' / ' + (container.extra_ports || []).join(',') : '' }}</code>
           </div>
           <div class="status-row">
-            <span class="st-label">容器</span>
+            <span class="st-label">{{ t('container') }}</span>
             <code>{{ container.container_name }}</code>
           </div>
         </template>
       </div>
-      <p v-else class="meta">尚未分配容器。</p>
+      <p v-else class="meta">{{ t('noContainer') }}</p>
 
       <div class="actions">
         <a class="btn btn-primary open" :href="entry" target="_blank" rel="noopener">
           <span class="dot" :class="{ on: running }"></span>
-          打开开发环境 →
+          {{ t('openEnv') }}
         </a>
         <button class="btn" :disabled="!running" @click="refresh">
-          刷新状态
+          {{ t('refreshStatus') }}
         </button>
-        <button class="btn" @click="showPwd = true">修改密码</button>
+        <button class="btn" @click="showPwd = true">{{ t('changePwd') }}</button>
       </div>
 
       <div v-if="showPwd" class="modal-mask" @click.self="showPwd = false">
         <div class="modal">
-          <h3>修改密码</h3>
+          <h3>{{ t('changePwd') }}</h3>
           <div class="pwd-fields">
-            <input v-model="oldPwd" type="password" placeholder="当前密码" required />
-            <input v-model="newPwd" type="password" placeholder="新密码（至少 8 位）" required minlength="8" />
-            <input v-model="confirmPwd" type="password" placeholder="确认新密码" required />
+            <input v-model="oldPwd" type="password" :placeholder="t('currentPwd')" required />
+            <input v-model="newPwd" type="password" :placeholder="t('newPwd')" required minlength="8" />
+            <input v-model="confirmPwd" type="password" :placeholder="t('confirmNewPwd')" required />
             <p v-if="pwdError" class="pwd-error">{{ pwdError }}</p>
           </div>
           <div class="btns">
-            <button class="btn btn-primary" @click="changePwd" :disabled="pwdBusy">{{ pwdBusy ? '提交中…' : '确认修改' }}</button>
-            <button class="btn" @click="showPwd = false" :disabled="pwdBusy">取消</button>
+            <button class="btn btn-primary" @click="changePwd" :disabled="pwdBusy">{{ pwdBusy ? t('submitting') : t('confirm') }}</button>
+            <button class="btn" @click="showPwd = false" :disabled="pwdBusy">{{ t('cancel') }}</button>
           </div>
         </div>
       </div>
 
-      <p class="hint">环境空闲 30 分钟会自动关闭，点击"打开开发环境"会自动唤醒。</p>
+      <p class="hint">{{ t('idleHint') }}</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { api } from '../api'
+
+const { t } = inject('i18n')
 
 const user = ref({})
 const container = ref(null)
@@ -80,7 +82,7 @@ const entry = computed(() => `/`)
 async function changePwd() {
   pwdError.value = ''
   if (newPwd.value !== confirmPwd.value) {
-    pwdError.value = '两次输入的新密码不一致'
+    pwdError.value = t('pwdMismatch')
     return
   }
   pwdBusy.value = true
@@ -211,32 +213,6 @@ h1 {
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .hint { color: var(--text-2); font-size: 12px; margin-top: 22px; }
-.modal-mask {
-  position: fixed; inset: 0;
-  background: rgba(2, 4, 10, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  display: flex; align-items: center; justify-content: center; z-index: 100;
-  animation: fadeIn 0.2s ease;
-}
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-.modal {
-  background: rgba(14, 20, 38, 0.92);
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
-  border: 1px solid var(--glass-border-strong);
-  border-radius: var(--radius-lg);
-  padding: 26px;
-  width: 420px; max-width: 92vw;
-  max-height: 90vh; overflow-y: auto;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  animation: pop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes pop {
-  from { transform: scale(0.96) translateY(10px); opacity: 0; }
-  to { transform: scale(1) translateY(0); opacity: 1; }
-}
-.modal h3 { margin: 0 0 16px; font-size: 15px; letter-spacing: 0.03em; }
 .pwd-fields { display: flex; flex-direction: column; gap: 10px; }
 .pwd-fields input {
   padding: 10px 12px;
@@ -248,5 +224,4 @@ h1 {
 }
 .pwd-fields input::placeholder { color: var(--text-2); }
 .pwd-error { color: var(--err); font-size: 12px; margin: 0; }
-.btns { margin-top: 16px; display: flex; gap: 8px; }
 </style>

@@ -12,7 +12,6 @@ import (
 
 const (
 	onlineWindow = 5 * time.Minute
-	hourBuckets  = 24
 )
 
 type dashboardResources struct {
@@ -58,34 +57,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	logs, _ := s.st.ListAccessLogs(r.Context(), 10000)
-	var totalBytes int64
-	var reqCount int64
-	var latencySum int64
-	var last *time.Time
-	var online int64
-	var last24h [hourBuckets]int64
-	seenOnline := map[string]bool{}
-	for _, l := range logs {
-		totalBytes += l.Bytes
-		reqCount++
-		latencySum += l.LatencyMS
-		if last == nil || l.Timestamp.After(*last) {
-			t := l.Timestamp
-			last = &t
-		}
-		if now.Sub(l.Timestamp) <= onlineWindow && l.UserID != "" && !seenOnline[l.UserID] {
-			seenOnline[l.UserID] = true
-			online++
-		}
-		idx := hourBuckets - 1 - int(now.Sub(l.Timestamp).Hours())
-		if idx >= 0 && idx < hourBuckets {
-			last24h[idx]++
-		}
+	sum, err := s.st.AccessLogsSummary(r.Context(), now.Add(-24*time.Hour), onlineWindow)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
 	}
 	var avgLatency float64
-	if reqCount > 0 {
-		avgLatency = float64(latencySum) / float64(reqCount)
+	if sum.Count > 0 {
+		avgLatency = float64(sum.LatencySum) / float64(sum.Count)
 	}
 
 	courses := []map[string]any{}
@@ -112,12 +91,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"users":      map[string]any{"total": len(users), "status": userStatus, "active": active},
 		"containers": map[string]any{"total": len(recs), "status": contStatus, "running": running},
 		"requests": map[string]any{
-			"count":          reqCount,
-			"bytes":          totalBytes,
-			"last":           last,
-			"online":         online,
+			"count":          sum.Count,
+			"bytes":          sum.Bytes,
+			"last":           sum.Last,
+			"online":         sum.Online,
 			"avg_latency_ms": avgLatency,
-			"last24h":        last24h[:],
+			"last24h":        sum.Last24H[:],
 		},
 		"resources": s.collectResources(r.Context(), recs),
 		"courses":   courses,

@@ -7,26 +7,26 @@
     <div class="card login-card">
       <div class="brand">
         <div class="logo">◈</div>
-        <h1>DevCapsule <span class="zh">开发胶囊舱</span></h1>
-        <p class="sub">首次部署，请设置管理员账户</p>
+        <h1>DevCapsule <span v-if="t('brandSub')" class="zh">{{ t('brandSub') }}</span></h1>
+        <p class="sub">{{ t('initTitle') }}</p>
       </div>
 
       <form @submit.prevent="submit">
         <div style="margin-bottom: 14px">
-          <label>管理员用户名</label>
-          <input v-model="username" autocomplete="username" required placeholder="请设置管理员用户名" />
+          <label>{{ t('adminUsername') }}</label>
+          <input v-model="username" autocomplete="username" :placeholder="t('adminUsernamePlaceholder')" required />
         </div>
         <div style="margin-bottom: 14px">
-          <label>管理员密码</label>
-          <input v-model="password" type="password" autocomplete="new-password" required placeholder="至少 8 位" minlength="8" />
+          <label>{{ t('adminPassword') }}</label>
+          <input v-model="password" type="password" autocomplete="new-password" :placeholder="t('adminPasswordPlaceholder')" required minlength="8" />
         </div>
         <div style="margin-bottom: 20px">
-          <label>确认密码</label>
-          <input v-model="confirmPassword" type="password" autocomplete="new-password" required placeholder="再次输入密码" minlength="8" />
+          <label>{{ t('confirmPassword') }}</label>
+          <input v-model="confirmPassword" type="password" autocomplete="new-password" :placeholder="t('confirmPasswordPlaceholder')" required minlength="8" />
         </div>
         <button class="btn btn-primary submit" type="submit" :disabled="loading">
           <span class="scan" v-if="loading"></span>
-          {{ loading ? '正在初始化…' : '完成设置' }}
+          {{ loading ? t('initBtnLoading') : t('initBtn') }}
         </button>
         <p v-if="error" class="err">{{ error }}</p>
       </form>
@@ -35,9 +35,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
+
+const { t } = inject('i18n')
 
 const username = ref('')
 const password = ref('')
@@ -48,7 +50,7 @@ const router = useRouter()
 
 async function submit() {
   if (password.value !== confirmPassword.value) {
-    error.value = '两次输入的密码不一致'
+    error.value = t('pwdMismatch')
     return
   }
   loading.value = true

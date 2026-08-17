@@ -1,12 +1,16 @@
 services:
   devcapsule:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     image: devcapsule:dev
     restart: unless-stopped
     ports:
       - "80:80"
     environment:
-      JWT_SECRET: dev-secret
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      IDLE_TIMEOUT_MIN: ${IDLE_TIMEOUT_MIN:-30}
+      BATCH_CONCURRENCY: ${BATCH_CONCURRENCY:-5}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /var/run/docker.sock:/var/run/docker.sock

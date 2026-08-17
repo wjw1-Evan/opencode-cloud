@@ -32,8 +32,6 @@ type StatsView struct {
 }
 
 const (
-	RoleUser      = model.RoleUser
-	StatusActive  = model.StatusActive
 	StatusRunning = model.ContainerRunning
 )
 

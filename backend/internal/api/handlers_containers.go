@@ -27,7 +27,11 @@ func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
 		}
 		s.orch.SyncStatus(r.Context(), c)
 	}
-	users, _ := s.st.ListUsers(r.Context())
+	userIDs := make([]string, 0, len(recs))
+	for _, c := range recs {
+		userIDs = append(userIDs, c.UserID)
+	}
+	users, _ := s.st.ListUsersByIDs(r.Context(), userIDs)
 	byID := map[string]*UserView{}
 	for _, u := range users {
 		byID[u.ID] = &UserView{Username: u.Username, Status: string(u.Status)}
@@ -82,17 +86,18 @@ func (s *Server) handleProvisionBatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	want := map[string]bool{}
+	for _, id := range req.UserIDs {
+		want[id] = true
+	}
 	selected := []*model.User{}
 	for _, u := range users {
 		if u.Role != model.RoleUser {
 			continue
 		}
 		if len(req.UserIDs) > 0 {
-			for _, id := range req.UserIDs {
-				if id == u.ID {
-					selected = append(selected, u)
-					break
-				}
+			if want[u.ID] {
+				selected = append(selected, u)
 			}
 		} else {
 			if u.Status == model.StatusActive || u.Status == model.StatusExpired {
@@ -103,6 +108,18 @@ func (s *Server) handleProvisionBatch(w http.ResponseWriter, r *http.Request) {
 	if len(selected) == 0 {
 		writeData(w, map[string]any{"provisioned": 0, "results": []any{}})
 		return
+	}
+
+	// Batch-fetch the containers of the selected users to know each one's
+	// existing template, avoiding N per-user queries.
+	userIDs := make([]string, 0, len(selected))
+	for _, u := range selected {
+		userIDs = append(userIDs, u.ID)
+	}
+	recs, _ := s.st.ListContainersByUserIDs(r.Context(), userIDs)
+	tplByUser := map[string]string{}
+	for _, c := range recs {
+		tplByUser[c.UserID] = c.TemplateID
 	}
 
 	// Each user keeps the template they were created with: prefer the template
@@ -124,10 +141,8 @@ func (s *Server) handleProvisionBatch(w http.ResponseWriter, r *http.Request) {
 	results := []docker.BatchResult{}
 	skipped := []map[string]any{}
 	for _, u := range selected {
-		tid := ""
-		if rec, err := s.st.GetContainerByUserID(r.Context(), u.ID); err == nil && rec.TemplateID != "" {
-			tid = rec.TemplateID
-		} else if defaultTpl != nil {
+		tid := tplByUser[u.ID]
+		if tid == "" && defaultTpl != nil {
 			tid = defaultTpl.ID
 		}
 		if tid == "" {

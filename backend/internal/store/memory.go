@@ -82,6 +82,23 @@ func (m *Memory) ListUsers(ctx context.Context) ([]*model.User, error) {
 	return out, nil
 }
 
+func (m *Memory) ListUsersByIDs(ctx context.Context, ids []string) ([]*model.User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	var out []*model.User
+	for id, u := range m.users {
+		if want[id] {
+			c := *u
+			out = append(out, &c)
+		}
+	}
+	return out, nil
+}
+
 func (m *Memory) UpdateUser(ctx context.Context, u *model.User) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -160,6 +177,23 @@ func (m *Memory) ListContainers(ctx context.Context) ([]*model.Container, error)
 		out = append(out, &cc)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ContainerName < out[j].ContainerName })
+	return out, nil
+}
+
+func (m *Memory) ListContainersByUserIDs(ctx context.Context, userIDs []string) ([]*model.Container, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	want := map[string]bool{}
+	for _, id := range userIDs {
+		want[id] = true
+	}
+	var out []*model.Container
+	for uid, cid := range m.byUser {
+		if want[uid] {
+			c := *m.containers[cid]
+			out = append(out, &c)
+		}
+	}
 	return out, nil
 }
 
@@ -298,6 +332,36 @@ func (m *Memory) LastAccess(ctx context.Context, userID string) (*time.Time, err
 		}
 	}
 	return last, nil
+}
+
+func (m *Memory) AccessLogsSummary(ctx context.Context, since time.Time, onlineWindow time.Duration) (*AccessLogsSummary, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var s AccessLogsSummary
+	now := time.Now()
+	onlineSince := now.Add(-onlineWindow)
+	seenOnline := map[string]bool{}
+	for _, l := range m.logs {
+		if l.Timestamp.Before(since) {
+			continue
+		}
+		s.Count++
+		s.Bytes += l.Bytes
+		s.LatencySum += l.LatencyMS
+		if s.Last == nil || l.Timestamp.After(*s.Last) {
+			t := l.Timestamp
+			s.Last = &t
+		}
+		if l.Timestamp.After(onlineSince) && l.UserID != "" && !seenOnline[l.UserID] {
+			seenOnline[l.UserID] = true
+			s.Online++
+		}
+		idx := 23 - int(now.Sub(l.Timestamp).Hours())
+		if idx >= 0 && idx < 24 {
+			s.Last24H[idx]++
+		}
+	}
+	return &s, nil
 }
 
 func (m *Memory) ExpireUsers(ctx context.Context, now time.Time) (int64, error) {

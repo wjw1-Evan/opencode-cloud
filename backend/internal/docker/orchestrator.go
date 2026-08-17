@@ -356,6 +356,7 @@ func (o *Orchestrator) SyncStatus(ctx context.Context, rec *model.Container) (*m
 	if !o.dc.Available() {
 		return rec, nil
 	}
+	prev := rec.Status
 	if rec.ContainerID == "" {
 		if rec.Status != model.ContainerRemoved {
 			rec.Status = model.ContainerError
@@ -380,8 +381,10 @@ func (o *Orchestrator) SyncStatus(ctx context.Context, rec *model.Container) (*m
 		// paused / restarting: leave as-is
 		return rec, nil
 	}
-	rec.UpdatedAt = time.Now().UTC()
-	o.st.UpdateContainer(ctx, rec)
+	if rec.Status != prev {
+		rec.UpdatedAt = time.Now().UTC()
+		o.st.UpdateContainer(ctx, rec)
+	}
 	return rec, nil
 }
 
