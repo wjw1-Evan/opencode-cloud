@@ -465,15 +465,17 @@ func (p *Postgres) StatsContainersByStatus(ctx context.Context) (map[model.Conta
 }
 
 func (p *Postgres) LastAccess(ctx context.Context, userID string) (*time.Time, error) {
-	var t time.Time
+	var t sql.NullTime
 	err := p.db.QueryRowContext(ctx, `SELECT MAX(ts) FROM access_logs WHERE user_id=$1`, userID).Scan(&t)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
 	if err != nil {
 		return nil, err
 	}
-	return &t, nil
+	// MAX(ts) is NULL when the user has no access logs: report (nil, nil) so
+	// callers like IdleStop can treat "never accessed" as "idle".
+	if !t.Valid {
+		return nil, nil
+	}
+	return &t.Time, nil
 }
 
 func (p *Postgres) AccessLogsSummary(ctx context.Context, since time.Time, onlineWindow time.Duration) (*AccessLogsSummary, error) {

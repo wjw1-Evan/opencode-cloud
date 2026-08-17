@@ -38,7 +38,7 @@ func (s *Server) JWTAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "missing token")
 			return
 		}
-		claims, err := s.tm.Parse(token)
+		claims, err := s.tm.ParseAccess(token)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid token")
 			return
@@ -79,12 +79,25 @@ func (s *Server) RequestLog(next http.Handler) http.Handler {
 
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status      int
+	wroteHeader bool
 }
 
 func (r *statusRecorder) WriteHeader(code int) {
+	if r.wroteHeader {
+		return
+	}
+	r.wroteHeader = true
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// Flush forwards to the underlying writer so streaming responses (SSE,
+// long-polling) are not buffered by the request-log wrapper.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // Hijack supports WebSocket upgrades through the request-log wrapper.

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,56 @@ func TestHealth(t *testing.T) {
 	rec := s.do(t, "GET", "/api/health", "", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("health status %d", rec.Code)
+	}
+}
+
+func TestInitializeConcurrentCreatesSingleAdmin(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	var wg sync.WaitGroup
+	codes := make([]int, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			rec := s.do(t, "POST", "/platform/auth/initialize", "", `{"username":"admin","password":"admin123"}`)
+			codes[i] = rec.Code
+		}(i)
+	}
+	wg.Wait()
+	admins := 0
+	for _, c := range codes {
+		if c == http.StatusOK {
+			admins++
+		}
+	}
+	if admins != 1 {
+		t.Fatalf("expected exactly one successful initialize, got %d (codes=%v)", admins, codes)
+	}
+	users, _ := st.ListUsers(context.Background())
+	adminCount := 0
+	for _, u := range users {
+		if u.Role == model.RoleAdmin {
+			adminCount++
+		}
+	}
+	if adminCount != 1 {
+		t.Fatalf("expected exactly one admin in store, got %d", adminCount)
+	}
+}
+
+func TestRequestLogFlushesStreamingResponses(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	flushed := false
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+			flushed = true
+		}
+	})
+	rec := httptest.NewRecorder()
+	s.RequestLog(handler).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if !flushed {
+		t.Fatal("expected statusRecorder to forward Flush to the underlying writer")
 	}
 }
 
@@ -75,6 +126,64 @@ func TestAuthRequired(t *testing.T) {
 	rec = s.do(t, "GET", "/platform/admin/users", "garbage-token", "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 with bad token, got %d", rec.Code)
+	}
+}
+
+func TestRefreshTokenNotUsableAsAccessToken(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "stu001", "pass12345", "user")
+
+	rec := s.do(t, "POST", "/platform/auth/login", "", `{"username":"stu001","password":"pass12345"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", rec.Code)
+	}
+	var out struct {
+		Data struct {
+			Access  string `json:"access"`
+			Refresh string `json:"refresh"`
+		} `json:"data"`
+	}
+	decodeJSON(t, rec, &out)
+	if out.Data.Refresh == "" {
+		t.Fatal("login returned no refresh token")
+	}
+
+	// the refresh token must not authenticate protected endpoints
+	rec = s.do(t, "GET", "/platform/auth/me", out.Data.Refresh, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected refresh token rejected on protected route, got %d", rec.Code)
+	}
+	// the access token must not be accepted by the refresh endpoint
+	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"`+out.Data.Access+`"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected access token rejected by refresh endpoint, got %d", rec.Code)
+	}
+	// and the real refresh token still works, rotating both cookies
+	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"`+out.Data.Refresh+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected refresh to succeed with refresh token, got %d %s", rec.Code, rec.Body.String())
+	}
+	var refreshed struct {
+		Data struct {
+			Access  string `json:"access"`
+			Refresh string `json:"refresh"`
+		} `json:"data"`
+	}
+	decodeJSON(t, rec, &refreshed)
+	if refreshed.Data.Access == "" || refreshed.Data.Refresh == "" || refreshed.Data.Refresh == out.Data.Refresh {
+		t.Fatalf("expected rotated tokens, got access=%q refresh=%q", refreshed.Data.Access, refreshed.Data.Refresh)
+	}
+	cookies := map[string]bool{}
+	for _, c := range rec.Result().Cookies() {
+		cookies[c.Name] = c.Value != "" && c.MaxAge > 0
+	}
+	if !cookies["access_token"] || !cookies["refresh_token"] {
+		t.Fatalf("expected refreshed access+refresh cookies to be set, got %v", rec.Header().Values("Set-Cookie"))
+	}
+	// the rotated refresh token must itself be usable for a new pair
+	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"`+refreshed.Data.Refresh+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected rotated refresh token to work, got %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -216,6 +325,16 @@ func TestBatchUsersExplicitAndDuplicateSkipped(t *testing.T) {
 	decodeJSON(t, rec, &out)
 	if out.Data.Created != 1 {
 		t.Fatalf("expected 1 new (carol), got %d", out.Data.Created)
+	}
+
+	// duplicates within the same request must not create twice or fail the batch
+	rec = s.do(t, "POST", "/platform/admin/users/batch", token, `{"usernames":["dave","dave","  dave  "]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("batch with in-request duplicates failed: %d %s", rec.Code, rec.Body.String())
+	}
+	decodeJSON(t, rec, &out)
+	if out.Data.Created != 1 {
+		t.Fatalf("expected 1 new (dave), got %d", out.Data.Created)
 	}
 }
 

@@ -293,6 +293,11 @@ func (m *Memory) DeleteTemplate(ctx context.Context, id string) error {
 func (m *Memory) LogAccess(ctx context.Context, l *model.AccessLog) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// The postgres store fills ts via DEFAULT now(); mirror that here so
+	// LastAccess / AccessLogsSummary behave the same in memory mode.
+	if l.Timestamp.IsZero() {
+		l.Timestamp = time.Now()
+	}
 	m.logs = append(m.logs, l)
 	return nil
 }

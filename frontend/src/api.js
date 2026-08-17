@@ -1,11 +1,42 @@
-async function request(method, path, body) {
+// Single in-flight refresh promise so concurrent 401s trigger only one call.
+let refreshing = null
+
+function refreshSession() {
+  if (!refreshing) {
+    refreshing = fetch('/platform/auth/refresh', { method: 'POST' })
+      .then((resp) => {
+        if (!resp.ok) throw new Error('refresh failed')
+      })
+      .finally(() => {
+        refreshing = null
+      })
+  }
+  return refreshing
+}
+
+async function request(method, path, body, retried = false) {
   const opts = { method, headers: {} }
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json'
     opts.body = JSON.stringify(body)
   }
   const resp = await fetch(path, opts)
-  if (resp.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/initialized')) {
+  const authRoute = path.includes('/auth/login') || path.includes('/auth/initialized') || path.includes('/auth/refresh')
+  if (resp.status === 401 && !authRoute) {
+    if (!retried) {
+      // Access token expired: silently refresh via the refresh cookie and retry
+      // the original request once. Only bounce to the login page if the refresh
+      // itself fails (e.g. the 24h refresh token has expired too).
+      try {
+        await refreshSession()
+      } catch {
+        window.location.href = '/'
+        throw new Error('unauthorized')
+      }
+      return request(method, path, body, true)
+    }
+    // The refresh succeeded but the retried request still 401s: the session is
+    // gone, bounce to the login page.
     window.location.href = '/'
     throw new Error('unauthorized')
   }
@@ -44,11 +75,22 @@ export const api = {
   uploadImage: async (file) => {
     const form = new FormData()
     form.append('file', file)
-    const resp = await fetch('/platform/admin/images/import', { method: 'POST', body: form })
-    if (resp.status === 401) { window.location.href = '/'; throw new Error('unauthorized') }
-    const data = await resp.json().catch(() => ({}))
-    if (!resp.ok) { const err = new Error(data.error || resp.statusText); err.status = resp.status; throw err }
-    return data.data
+    const doUpload = async (retried) => {
+      const resp = await fetch('/platform/admin/images/import', { method: 'POST', body: form })
+      if (resp.status === 401 && !retried) {
+        try {
+          await refreshSession()
+        } catch {
+          window.location.href = '/'
+          throw new Error('unauthorized')
+        }
+        return doUpload(true)
+      }
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) { const err = new Error(data.error || resp.statusText); err.status = resp.status; throw err }
+      return data.data
+    }
+    return doUpload(false)
   },
   // templates
   listTemplates: () => request('GET', '/platform/admin/templates'),

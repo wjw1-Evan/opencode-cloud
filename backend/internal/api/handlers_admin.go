@@ -55,11 +55,16 @@ func (s *Server) handleBatchUsers(w http.ResponseWriter, r *http.Request) {
 
 	var accounts []batch.Account
 	if len(req.Usernames) > 0 {
+		// Dedupe within the request: duplicate names would otherwise be
+		// created once and then fail the UNIQUE constraint mid-batch,
+		// leaving a partial creation behind and erroring the whole request.
+		seen := map[string]bool{}
 		for _, name := range req.Usernames {
 			name = strings.TrimSpace(name)
-			if name == "" {
+			if name == "" || seen[name] {
 				continue
 			}
+			seen[name] = true
 			pw, err := batch.GeneratePassword(req.PasswordLength)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "generate password")
@@ -191,7 +196,13 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.PasswordPlain = *req.Password
 	}
 	if req.Status != nil {
-		user.Status = model.UserStatus(*req.Status)
+		switch model.UserStatus(*req.Status) {
+		case model.StatusActive, model.StatusDisabled, model.StatusExpired:
+			user.Status = model.UserStatus(*req.Status)
+		default:
+			writeError(w, http.StatusBadRequest, "invalid status")
+			return
+		}
 	}
 	if req.Course != nil {
 		user.Course = *req.Course

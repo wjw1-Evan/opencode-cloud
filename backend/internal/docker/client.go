@@ -284,6 +284,12 @@ func (c *Client) ListManaged(ctx context.Context) ([]types.Container, error) {
 func (c *Client) Stats(ctx context.Context, id string) (*ContainerStats, error) {
 	info, err := c.cli.ContainerInspect(ctx, id)
 	if err != nil {
+		// The container is gone (removed or rebuilt under a new ID): drop its
+		// cached stats so the map does not leak one entry per container over
+		// the host's lifetime.
+		c.statsMu.Lock()
+		delete(c.statsPrev, id)
+		c.statsMu.Unlock()
 		return nil, err
 	}
 	stats, err := c.cli.ContainerStatsOneShot(ctx, id)
@@ -302,12 +308,23 @@ func (c *Client) Stats(ctx context.Context, id string) (*ContainerStats, error) 
 	cs := &ContainerStats{Time: time.Now(), MemBytes: float64(raw.MemoryStats.Usage), MemLimit: info.HostConfig.Memory}
 
 	c.statsMu.Lock()
+	// Bound the cache: rebuilt containers get new IDs and leave behind stale
+	// entries that nothing ever revisits. Evicting the whole map is harmless
+	// (deltas are recomputed from the next sample).
+	if len(c.statsPrev) >= 512 {
+		c.statsPrev = map[string]*rawStats{}
+	}
 	prev, hasPrev := c.statsPrev[id]
 	c.statsPrev[id] = &raw
 	c.statsMu.Unlock()
 
 	if hasPrev {
-		cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage - prev.CPUStats.CPUUsage.TotalUsage)
+		// The counters reset when the container restarts; an unsigned
+		// underflow would otherwise produce a huge bogus CPU reading.
+		cpuDelta := float64(0)
+		if raw.CPUStats.CPUUsage.TotalUsage >= prev.CPUStats.CPUUsage.TotalUsage {
+			cpuDelta = float64(raw.CPUStats.CPUUsage.TotalUsage - prev.CPUStats.CPUUsage.TotalUsage)
+		}
 		sysDelta := float64(raw.CPUStats.SystemUsage - prev.CPUStats.SystemUsage)
 		ncpu := raw.CPUStats.OnlineCPUs
 		if ncpu == 0 {
@@ -329,7 +346,16 @@ func (g *SecretGen) Next() (string, error) {
 	if _, err := cryptoRandRead(b); err != nil {
 		return "", err
 	}
+	// Rejection sampling avoids the modulo bias of b[i] % len(chars):
+	// 256 is not a multiple of 56, so a straight modulo would make the
+	// first 32 characters of the alphabet more likely than the rest.
+	limit := 256 - 256%len(chars)
 	for i := range b {
+		for int(b[i]) >= limit {
+			if _, err := cryptoRandRead(b[i : i+1]); err != nil {
+				return "", err
+			}
+		}
 		b[i] = chars[int(b[i])%len(chars)]
 	}
 	return string(b), nil

@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/docker/docker/api/types/image"
 )
 
 func dockerOK(s *Server) bool {
@@ -90,37 +92,23 @@ func (s *Server) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "image not found")
 		return
 	}
-	type layerInfo struct {
-		Command    string `json:"command"`
-		Created    string `json:"created"`
-		CreatedBy  string `json:"created_by"`
-		Size       int64  `json:"size"`
-		EmptyLayer bool   `json:"empty_layer"`
-	}
 	type inspectView struct {
-		ID            string      `json:"id"`
-		RepoTags      []string    `json:"repo_tags"`
-		RepoDigests   []string    `json:"repo_digests"`
-		Architecture  string      `json:"architecture"`
-		OS            string      `json:"os"`
-		Size          int64       `json:"size"`
-		VirtualSize   int64       `json:"virtual_size"`
-		Created       string      `json:"created"`
-		Author        string      `json:"author"`
-		Env           []string    `json:"env"`
-		Cmd           []string    `json:"cmd"`
-		Entrypoint    []string    `json:"entrypoint"`
-		WorkingDir    string      `json:"working_dir"`
-		Labels        map[string]string `json:"labels"`
-		Layers        []string    `json:"layers"`
-		RootFS        struct {
-			Type   string   `json:"type"`
-			Layers []string `json:"layers"`
-		} `json:"root_fs"`
-	}
-	layers := make([]layerInfo, 0, len(info.RootFS.Layers))
-	for _, l := range info.RootFS.Layers {
-		layers = append(layers, layerInfo{Command: l})
+		ID           string                 `json:"id"`
+		RepoTags     []string               `json:"repo_tags"`
+		RepoDigests  []string               `json:"repo_digests"`
+		Architecture string                 `json:"architecture"`
+		OS           string                 `json:"os"`
+		Size         int64                  `json:"size"`
+		VirtualSize  int64                  `json:"virtual_size"`
+		Created      string                 `json:"created"`
+		Author       string                 `json:"author"`
+		Env          []string               `json:"env"`
+		Cmd          []string               `json:"cmd"`
+		Entrypoint   []string               `json:"entrypoint"`
+		WorkingDir   string                 `json:"working_dir"`
+		Labels       map[string]string      `json:"labels"`
+		Layers       []string               `json:"layers"`
+		RootFS       image.RootFS           `json:"root_fs"`
 	}
 	v := inspectView{
 		ID:           info.ID,
@@ -138,6 +126,7 @@ func (s *Server) handleGetImage(w http.ResponseWriter, r *http.Request) {
 		WorkingDir:   info.Config.WorkingDir,
 		Labels:       info.Config.Labels,
 		Layers:       info.RootFS.Layers,
+		RootFS:       info.RootFS,
 	}
 	writeData(w, v)
 }

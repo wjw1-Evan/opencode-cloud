@@ -78,7 +78,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			body.Refresh = c.Value
 		}
 	}
-	claims, err := s.tm.Parse(body.Refresh)
+	claims, err := s.tm.ParseRefresh(body.Refresh)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid refresh token")
 		return
@@ -100,6 +100,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "access_token", Value: access,
 		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 1800,
+	})
+	// Rotate the refresh token in the cookie too: the browser keeps using the
+	// cookie on the next silent refresh, so without this it would hold a stale
+	// token until the 24h window ends and force a re-login.
+	http.SetCookie(w, &http.Cookie{
+		Name: "refresh_token", Value: refresh,
+		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400,
 	})
 	writeData(w, map[string]any{"access": access, "refresh": refresh})
 }
@@ -205,6 +212,10 @@ type initializeRequest struct {
 
 // handleInitialize creates the initial admin account. Only works once.
 func (s *Server) handleInitialize(w http.ResponseWriter, r *http.Request) {
+	// Serialize the check-then-create so two concurrent initialize requests
+	// cannot both pass the "no admin yet" check and create two admins.
+	s.initMu.Lock()
+	defer s.initMu.Unlock()
 	users, err := s.st.ListUsers(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "db error")
@@ -253,7 +264,11 @@ func (s *Server) handleInitialize(w http.ResponseWriter, r *http.Request) {
 }
 
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+	// X-Forwarded-For is only trusted when the direct peer is a proxy we
+	// control (loopback / private network, e.g. the nginx sidecar). Otherwise
+	// an attacker hitting the API directly could spoof the header and bypass
+	// the login rate limit.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" && isTrustedProxy(r.RemoteAddr) {
 		parts := strings.Split(xff, ",")
 		return strings.TrimSpace(parts[0])
 	}
@@ -262,4 +277,15 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// isTrustedProxy reports whether the direct peer is loopback or on a private
+// network range (the deployment's nginx sidecar connects from the bridge).
+func isTrustedProxy(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
 }

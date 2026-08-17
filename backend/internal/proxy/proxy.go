@@ -75,7 +75,11 @@ func (p *Proxy) director(req *http.Request) {
 	if req.Header.Get("X-Forwarded-For") == "" {
 		req.Header.Set("X-Forwarded-For", req.RemoteAddr)
 	}
-	req.Header.Set("X-Forwarded-Proto", "http")
+	// Preserve a scheme already set by an upstream proxy (e.g. nginx behind
+	// TLS) instead of overwriting it.
+	if req.Header.Get("X-Forwarded-Proto") == "" {
+		req.Header.Set("X-Forwarded-Proto", "http")
+	}
 }
 
 func (p *Proxy) errorHandler(w http.ResponseWriter, r *http.Request, err error) {
@@ -213,12 +217,17 @@ func (p *Proxy) logAccess(user *model.User, r *http.Request, rw *responseRecorde
 
 type responseRecorder struct {
 	http.ResponseWriter
-	status int
-	bytes  int64
-	start  time.Time
+	status      int
+	wroteHeader bool
+	bytes       int64
+	start       time.Time
 }
 
 func (r *responseRecorder) WriteHeader(code int) {
+	if r.wroteHeader {
+		return
+	}
+	r.wroteHeader = true
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
 }

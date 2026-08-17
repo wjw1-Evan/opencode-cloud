@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"devcapsule/backend/internal/auth"
@@ -29,6 +30,7 @@ type Server struct {
 	px         *proxy.Proxy
 	logger     *log.Logger
 	loginLimit *loginLimiter
+	initMu     sync.Mutex
 }
 
 func New(cfg config.Config, st store.Store, dc *docker.Client, logger *log.Logger) (*Server, error) {
@@ -135,7 +137,7 @@ func (s *Server) rootHandler() http.Handler {
 			s.staticHandler().ServeHTTP(w, r)
 			return
 		}
-		claims, err := s.tm.Parse(token)
+		claims, err := s.tm.ParseAccess(token)
 		if err != nil {
 			s.staticHandler().ServeHTTP(w, r)
 			return

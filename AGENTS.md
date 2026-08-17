@@ -17,6 +17,7 @@ go run ./cmd/server                  # run locally (requires DATABASE_URL, JWT_S
 # Frontend (from frontend/)
 npm install && npm run dev           # Vite dev server (http://localhost:5173, proxies /api /dc-static /platform to :8080)
 npm run build                        # builds to backend/internal/api/web/dist (embedded into Go binary)
+npm test                             # vitest unit tests (src/api.test.js: silent refresh, dedup, error fallbacks)
 
 # E2E tests (requires docker compose up -d with user-net)
 bash e2e/run.sh
@@ -42,13 +43,14 @@ docker compose -f docker-compose.dev.yml down   # stop
 
 - `integration_test.go` in `internal/docker/` requires Docker daemon; set `TEST_DOCKER=0` to skip
 - E2e tests use `ADMIN_USERNAME`/`ADMIN_PASSWORD` env vars, default `admin`/`admin-e2e-pass`
-- No lint/typecheck commands configured; use `go vet` for static analysis
+- No lint/typecheck commands configured; use `go vet` for static analysis, `npm test` (vitest) for frontend
+- Run backend tests with `-race` before pushing changes
 
 ## Conventions
 
 - Go standard library `net/http` for HTTP, no framework
 - PostgreSQL 17 (pgx driver), migrations run at startup
-- JWT stored in HttpOnly cookies, 30min access / 24h refresh
+- JWT stored in HttpOnly cookies, 30min access / 24h refresh; access/refresh tokens are type-isolated (refresh cannot authenticate, access cannot refresh); `POST /platform/auth/refresh` rotates both cookies; frontend silently refreshes on 401 and replays the request once (see `frontend/src/api.js`)
 - Passwords: argon2 hash, plain text stored in `password_plain` for admin viewing
 - Containers: each user gets isolated container with random password, CPU/mem/PID limits
 - Templates: `internal_port` + `extra_ports[]`, `run_user`/`cap_add` for images needing root/caps (e.g. dify s6-overlay); 4 system templates seeded at startup, not deletable

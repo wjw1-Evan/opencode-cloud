@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math/big"
 	"sort"
 	"strings"
 )
@@ -49,11 +50,14 @@ func GeneratePassword(length int) (string, error) {
 		length = 8
 	}
 	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
+	// rand.Int has no modulo bias, so every character is equally likely.
+	max := big.NewInt(int64(len(passwordChars)))
 	for i := range b {
-		b[i] = passwordChars[int(b[i])%len(passwordChars)]
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		b[i] = passwordChars[n.Int64()]
 	}
 	return string(b), nil
 }

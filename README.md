@@ -4,6 +4,30 @@
 
 > 一句话：**管理员建一个分组 → 批量发账号 → 用户打开网页即可写代码 / 搭 AI 应用**。
 
+## 目录
+
+- [特性一览](#特性一览)
+- [适用场景](#适用场景)
+- [安装方法](#安装方法)（单一镜像部署 / 本地开发 / 首次使用）
+- [使用指南](#使用指南)（管理员操作手册 / 用户使用手册）
+- [环境变量与配置](#环境变量与配置)
+- [生产部署](#生产部署)（TLS / 检查清单 / 备份 / 监控）
+- [核心设计决策](#核心设计决策)
+- [系统架构](#系统架构)（路由约定 / 附加端口）
+- [核心流程](#核心流程)（批量建号 / 批量建容器 / 用户访问 / 后台周期任务）
+- [应用模板与用户容器](#应用模板与用户容器)
+- [代理层要求](#代理层要求)
+- [安全设计](#安全设计)
+- [资源估算](#资源估算)
+- [数据模型](#数据模型)
+- [REST API 设计](#rest-api-设计)
+- [项目结构](#项目结构)
+- [技术选型](#技术选型)
+- [开发与测试](#开发与测试)
+- [项目状态](#项目状态)
+- [已知风险与 FAQ](#已知风险与-faq)
+- [里程碑](#里程碑)
+
 ## 特性一览
 
 - **管理员端**
@@ -16,6 +40,7 @@
   - 使用统计：总览页看用户/容器状态分布、在线数、累计访问/累计流量/平均响应、近 24h 访问趋势、CPU/内存实时聚合、镜像模板数与空闲停止配置、按课程分布
 - **用户端**
   - 网页账号密码登录 → 自动进入自己专属的工具界面（管理员配置的镜像是什么就进什么工具）
+  - 登录态自动续期：access token（30 分钟）过期后前端静默调用刷新接口换发新 token 并重放原请求，无需重新登录；refresh token（24 小时）随刷新滚动轮换，超过 24 小时才需再次登录
   - 代码/数据持久化在专属 volume，容器重启不丢
 - **平台能力**
   - 空闲自动停止（30 分钟无访问自动 `stop`，访问时秒级唤醒），账号到期自动停容器
@@ -51,13 +76,7 @@ docker run -d \
 # 打开 http://<服务器>/ 首次访问设置管理员账户
 ```
 
-**环境变量说明**：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `JWT_SECRET` | — | JWT 签名密钥，**生产必须修改**，可用 `openssl rand -hex 32` 生成 |
-| `IDLE_TIMEOUT_MIN` | `30` | 空闲停止时间（分钟） |
-| `BATCH_CONCURRENCY` | `5` | 批量建容器并发数 |
+> 完整环境变量见下文[「环境变量与配置」](#环境变量与配置)（`JWT_SECRET` 生产必须修改）。
 
 **使用 Docker Compose（推荐）**：
 
@@ -83,7 +102,7 @@ JWT_SECRET=$(openssl rand -hex 32) docker compose up -d
 
 **首次访问配置管理员**：
 
-启动后打开 `http://<服务器>/`，系统检测到尚无管理员账户，会自动跳转到初始化页面。填写管理员用户名和密码（≥ 8 位）即可完成设置，之后自动跳转到登录页。
+启动后打开 `http://<服务器>/`，系统检测到尚无管理员账户，会自动跳转到初始化页面，完成设置后跳转登录页（详见下文[「首次使用」](#首次使用3-步建组)）。
 
 ### 方式 B：本地开发（前后端分离）
 
@@ -91,7 +110,7 @@ JWT_SECRET=$(openssl rand -hex 32) docker compose up -d
 # 使用开发环境 compose（自动构建本地镜像）
 docker compose -f docker-compose.dev.yml up -d
 
-# 打开 http://localhost: 首次访问设置管理员账户
+# 打开 http://localhost/ 首次访问设置管理员账户
 # 停止
 docker compose -f docker-compose.dev.yml down
 ```
@@ -113,7 +132,7 @@ cd backend && go run ./cmd/server
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-> macOS（Docker Desktop）：Docker Desktop 的 VM 内存/CPU 需手动调高，一次跑 50 个容器本地吃力，生产建议 Linux 服务器。
+> macOS（Docker Desktop）：VM 内存/CPU 需手动调高，一次跑 50 个容器本地吃力，生产建议 Linux 服务器（另见 FAQ #3）。
 
 ### 首次使用（3 步建组）
 
@@ -146,6 +165,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 4. 代码/数据保存在专属 volume（`code-{username}` 工作区 + `ocdata-{username}` 会话数据），关掉浏览器、容器重启都不丢
 5. 一段时间不用容器会自动停止，再次访问时自动秒级唤醒
 6. 可在门户页「修改密码」自助更换登录密码（新密码至少 8 位），管理员列表中会同步显示
+7. 登录态自动续期：access token 过期后页面静默刷新 token 并继续工作，无需重新登录（refresh token 超过 24 小时才需再次登录）
 
 ## 环境变量与配置
 
@@ -158,7 +178,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 > 管理员账户通过首次访问页面初始化，无需环境变量配置。
 
-## 生产部署（公司场景）
+## 生产部署
 
 ### 1. TLS 与反代
 
@@ -223,7 +243,7 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 | 容器访问方式 | HTTP 反向代理 | 不做宿主机端口映射，避免端口耗尽，可扩展性好 |
 | 后端技术栈 | Go | 官方 Docker SDK、单二进制部署（前端 embed）、代理层性能好 |
 | 用户路由 | 根路径 + JWT 身份识别 | 登录用户的根路径请求自动转发到其容器，工具无需感知前缀 |
-| 认证 | 外层平台 JWT + 内层容器随机密码 | 双层防御，用户只感知一层登录 |
+| 认证 | 外层平台 JWT + 内层容器随机密码 | 双层防御，用户只感知一层登录；JWT 30min access + 24h refresh，access 过期由前端静默刷新续期 |
 | 资源控制 | 每容器 CPU/内存/PID 限额 + 空闲自动停 | 控住 50 容器内存成本 |
 
 ## 系统架构
@@ -260,6 +280,8 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 
 ## 核心流程
 
+> 操作层面的逐步指引见上文[「管理员操作手册」](#使用指南)；本节说明底层机制与数据流。
+
 ### 批量建号（管理员）
 
 1. 输入课程/分组（如「Python 基础」）与数量（1–1000），或直接给显式用户名列表（`usernames`）
@@ -281,6 +303,7 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 1. 浏览器打开门户 → 账号密码登录（登录限流：每 IP 每分钟 10 次）
 2. 访问站点根路径 `/` → 自动进入自己的工具（opencode / VS Code / Dify…）；运行中的应用走 `/port/{port}/` 附加端口路由；容器未运行时自动 `start` 并等待健康（15s）
 3. 代码持久化在专属 volume，容器重启不丢；请求实时写入 `access_logs`（在线数与空闲判定依据）
+4. 登录态维持：access token 30 分钟过期后，前端对 401 响应自动调用 `/platform/auth/refresh` 换发新 token 并重放原请求（并发 401 共享一次刷新），refresh token 24 小时随刷新滚动轮换；仅当刷新也失败时才跳回登录页
 
 ### 后台周期任务（每 5 分钟）
 
@@ -318,8 +341,8 @@ opencode web 大量使用 SSE（`/global/event`）与 WebSocket：
 
 ## 安全设计
 
-- 密码 argon2 哈希（明文存于 `password_plain` 供管理员查看；批量建号响应直接返回明文账号，由前端生成 `accounts.csv` 分发）；登录接口限流（每 IP 每分钟 10 次）
-- JWT 短生命周期（30 分钟 access + 24h refresh，HttpOnly cookie）；代理只允许用户访问自己的容器，杜绝越权/SSRF
+- 密码 argon2 哈希（明文存于 `password_plain` 供管理员查看；批量建号响应直接返回明文账号，由前端生成 `accounts.csv` 分发）；登录接口限流（每 IP 每分钟 10 次；`X-Forwarded-For` 仅在直连对端为受信代理（回环/私网，如 nginx sidecar）时才采信，避免伪造请求头绕过限流）
+- JWT 短生命周期（30 分钟 access + 24h refresh，HttpOnly cookie）：access/refresh token 按类型隔离，refresh token 不能当 access token 用、access token 不能用于刷新；每次刷新换发新 token 对并滚动更新 cookie；前端在接口 401 时静默刷新并重放原请求，刷新失败才跳回登录页。代理只允许用户访问自己的容器，杜绝越权/SSRF
 - 双层认证：建容器时生成随机密码注入 `OPENCODE_SERVER_USERNAME/PASSWORD`，代理自动带 Basic Auth 上游转发，浏览器无感；主端口与附加端口全部走同一代理，即使绕过代理直连容器端口也打不开（vscode 系统模板 `--auth none` 依赖该层兜底）
 - user-net 为自定义 bridge；容器间隔离依赖**每容器独立随机密码**（代理注入），用户容器不挂 docker.sock，api 独享 socket
 - 容器安全加固：CPU/内存/pids=128 限额、`no-new-privileges`、`CapDrop: ALL`
@@ -327,7 +350,9 @@ opencode web 大量使用 SSE（`/global/event`）与 WebSocket：
 
 > 注：`user-net` 未启用 ICC 隔离（`enable_icc` 保持默认），因为代理容器必须按容器名可达学生容器；跨容器横向访问被工具侧 Basic Auth 与随机密码阻断。如需更强的网络级隔离，需在宿主机网络层做 egress/ingress 控制。
 
-## 资源估算（50 用户）
+## 资源估算
+
+> 以下以 50 用户为例。
 
 | 项 | 值 |
 |---|---|
@@ -337,7 +362,9 @@ opencode web 大量使用 SSE（`/global/event`）与 WebSocket：
 | 批量建容器 | 一次性预拉镜像 + 并发 create（`BATCH_CONCURRENCY=5`，1~2s/个），50 个约 1 分钟内完成 |
 | 磁盘 | 每用户 volume `code-{username}`(工作区) + `ocdata-{username}`(会话)，约 2 GB/人，50 人 ≈ 100 GB |
 
-## 数据模型（PostgreSQL）
+## 数据模型
+
+PostgreSQL 数据模型：
 
 ```
 users            id, username(unique), password_hash, password_plain, role(admin/user),
@@ -360,7 +387,7 @@ access_logs      id(bigserial), user_id, path, status, bytes, latency_ms, ts
 | 模块 | 接口 |
 |---|---|
 | 初始化 | `GET /platform/auth/initialized`（是否已设置管理员）、`POST /platform/auth/initialize`（首次部署创建管理员，仅一次） |
-| 认证 | `POST /platform/auth/login`（限流）、`POST /platform/auth/refresh`、`GET /platform/auth/logout`、`GET /platform/auth/me`（返回 `user` + `container`（含主/附加端口））、`POST /platform/auth/change-password`（用户自助改密码，新密码 ≥ 8 位） |
+| 认证 | `POST /platform/auth/login`（限流）、`POST /platform/auth/refresh`（换发 access+refresh 并滚动更新两个 cookie）、`GET /platform/auth/logout`、`GET /platform/auth/me`（返回 `user` + `container`（含主/附加端口））、`POST /platform/auth/change-password`（用户自助改密码，新密码 ≥ 8 位） |
 | 用户 | `POST /platform/admin/users/batch`（生成 N 个/显式用户名列表，可带 `course/expires_in_days/限额`，响应含明文账号）、`GET /platform/admin/users`（含当前密码）、`PATCH /platform/admin/users/{id}`（改密码/禁用/延长到期/改课程/限额）、`DELETE /platform/admin/users/{id}`（级联移除容器）、`GET /platform/admin/users/export`（JSON 账号清单）、`POST /platform/admin/users/batch/action`（按 `user_ids` 批量 `start/delete/restart/stop`） |
 | 容器 | `POST /platform/admin/containers/batch`（按 `template_id` + `user_ids`，`force` 可重建）、`GET /platform/admin/containers`（实时状态调和）、`POST /platform/admin/containers/{id}/start\|stop\|restart\|remove`、`GET /platform/admin/containers/{id}/stats`、`GET /platform/admin/containers/stats/all`（各容器实时 Docker stats） |
 | 模板 | `GET/POST /platform/admin/templates`、`GET/PUT/DELETE /platform/admin/templates/{id}`（`internal_port` 主端口 + `extra_ports[]` 附加端口 + `run_user`/`cap_add`；系统模板不可删） |
@@ -414,6 +441,10 @@ go test ./...        # 单元 + 集成测试（代理 SSE/WS、鉴权、批量�
 go vet ./...         # 静态检查
 go build ./cmd/server
 
+cd frontend
+npm test             # vitest 前端测试（认证静默刷新、并发去重、错误兜底等）
+npm run build        # 构建到 backend/internal/api/web/dist（embed 进 Go 二进制）
+
 # 端到端测试（需 docker compose up -d 且已建 user-net；测试模板直接使用官方镜像，无需自建）
 # 管理员默认 admin / admin-e2e-pass，可用 ADMIN_USERNAME / ADMIN_PASSWORD 覆盖
 bash e2e/run.sh      # 覆盖：登录 → 建模板 → 批量建号 → 批量建容器 → 学生访问代理 → 批量操作 → 改密 → Dashboard 统计
@@ -456,11 +487,12 @@ docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
 | push `v*` tag | `v1.0.0`, `1.0`, `latest` | 版本发布，同时更新 `latest` |
 | push PR | `pr-N`, `sha-xxx` | PR 构建不推送，仅验证编译 |
 
-当前实现状态：
-- ✅ Go 后端：认证（JWT + 限流 + 首次初始化）、批量建号、模板（多端口/环境变量/启动命令/运行用户/capability）、容器编排（幂等批量/空闲停/到期停/状态调和/实时 stats）、镜像管理（拉取/导入/删除/详情）、反向代理（SSE/WS、双层认证、多端口路由、访问日志）、后台周期任务
-- ✅ 前端：Vue3 管理台（总览 / 用户与容器 / 镜像模板 / 镜像管理 / 使用帮助）+ 用户门户（查看状态、打开环境、自助改密），中英双语，构建产物 embed 进 Go 二进制
-- ✅ 部署：单一镜像（PostgreSQL + Nginx + Go API）、Supervisor 进程管理、GitHub Actions 自动构建（linux/amd64 + arm64）
-- ✅ CI/CD：GitHub Actions → GitHub Container Registry (ghcr.io)
+## 项目状态
+
+- ✅ **后端**：认证（JWT 类型隔离 + 登录限流 + 静默刷新 + 首次初始化）、批量建号、模板（多端口/环境变量/启动命令/运行用户/capability）、容器编排（幂等批量/空闲停/到期停/状态调和/实时 stats）、镜像管理（拉取/导入/删除/详情）、反向代理（SSE/WS、双层认证、多端口路由、访问日志）、后台周期任务
+- ✅ **前端**：Vue3 管理台（总览 / 用户与容器 / 镜像模板 / 镜像管理 / 使用帮助）+ 用户门户（查看状态、打开环境、自助改密、登录态静默刷新），中英双语，构建产物 embed 进 Go 二进制
+- ✅ **部署**：单一镜像（PostgreSQL + Nginx + Go API）、Supervisor 进程管理、GitHub Actions 自动构建（linux/amd64 + arm64）
+- ✅ **CI/CD**：GitHub Actions → GitHub Container Registry (ghcr.io)
 - 🚧 待完善：生产 TLS 全链路验证、通用工具路径改写
 
 ## 已知风险与 FAQ

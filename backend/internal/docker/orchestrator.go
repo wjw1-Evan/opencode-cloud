@@ -144,13 +144,12 @@ func (o *Orchestrator) Provision(ctx context.Context, user *model.User, tpl *mod
 	}
 	user.ContainerID = id
 	o.st.UpdateUser(ctx, user)
-	// best-effort health check: surface slow/broken startups via status
+	// Best-effort warm-up: give the app time to bind its port before the
+	// proxy's first request. A slow/broken startup is not fatal here — the
+	// proxy retries on demand — so the result is intentionally discarded.
 	healthCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := o.dc.WaitHealthy(healthCtx, id, tpl.InternalPort, 30*time.Second); err != nil {
-		rec.Status = model.ContainerRunning
-		o.st.UpdateContainer(ctx, rec)
-	}
+	_ = o.dc.WaitHealthy(healthCtx, id, tpl.InternalPort, 30*time.Second)
+	cancel()
 	return rec, nil
 }
 
