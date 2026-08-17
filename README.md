@@ -30,34 +30,75 @@
 
 ## 安装方法
 
-> 前置要求：Linux 服务器（或装了 Docker Desktop 的开发机）、Docker Engine + Compose、git；生产部署另需 PostgreSQL（compose 中已内置）。
+> 前置要求：Linux 服务器（或装了 Docker Desktop 的开发机）、Docker Engine + Compose、git。
 
-### 方式 A：docker-compose 一键部署（推荐）
+### 方式 A：单一镜像部署（推荐）
 
-仓库自带 `docker-compose.yml`（`api` + `nginx` + `postgres`），前端构建产物已 `embed` 进 Go 二进制，单文件分发。
+只需拉取一个镜像即可运行完整平台（包含 PostgreSQL + API + Nginx）。
 
 ```bash
-# 1. 创建用户容器网络（api 与所有用户容器所在的专用网络，compose 声明为 external）
+# 1. 创建用户容器网络
 docker network create devcapsule_user-net
 
-# 2. 准备密钥配置
-cp .env.example .env
-#    编辑 .env：JWT_SECRET（必改，可用 openssl rand -hex 32）、ADMIN_PASSWORD（必改）
+# 2. 运行容器（一个命令即可启动）
+docker run -d \
+  --name devcapsule \
+  -p 80:80 \
+  -v pgdata:/var/lib/postgresql/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e JWT_SECRET=$(openssl rand -hex 32) \
+  -e ADMIN_PASSWORD=your-secure-password \
+  -e NETWORK_NAME=devcapsule_user-net \
+  --restart unless-stopped \
+  ghcr.io/wjw1-evan/opencode-cloud:latest
 
-# 3. 构建前端产物（嵌入 Go 二进制；若仓库已含 backend/internal/api/web/dist 可跳过）
-cd frontend && npm ci && npm run build && cd ..
-
-# 4. 启动（首次会自动构建 api 镜像、迁移建表、创建管理员、seed 系统模板）
-docker compose up -d --build
-
-# 5. 打开 http://<服务器>/ 用管理员账号登录
+# 3. 打开 http://<服务器>/ 用管理员账号登录
 ```
 
-- 日志：`docker compose logs -f api`
-- 升级：`git pull && cd frontend && npm run build && cd .. && docker compose up -d --build`
-- 卸载：`docker compose down`（数据卷 `pgdata` 默认保留）
+**环境变量说明**：
 
-> ⚠️ api 容器需要读写宿主机的 `docker.sock`（compose 已挂载），请确保 Docker 可用。用户容器网络 `devcapsule_user-net` 必须**预先创建**，否则 compose 会启动失败。
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `JWT_SECRET` | ✅ | JWT 签名密钥，可用 `openssl rand -hex 32` 生成 |
+| `ADMIN_PASSWORD` | ✅ | 管理员密码 |
+| `ADMIN_USERNAME` | ❌ | 管理员用户名，默认 `admin` |
+| `NETWORK_NAME` | ❌ | 用户容器网络名，默认 `devcapsule_user-net` |
+| `IDLE_TIMEOUT_MIN` | ❌ | 空闲停止时间（分钟），默认 30 |
+| `BATCH_CONCURRENCY` | ❌ | 批量建容器并发数，默认 5 |
+
+**使用 Docker Compose（推荐）**：
+
+```yaml
+# docker-compose.yml
+services:
+  devcapsule:
+    image: ghcr.io/wjw1-evan/opencode-cloud:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      NETWORK_NAME: devcapsule_user-net
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - user-net
+
+networks:
+  user-net:
+    name: devcapsule_user-net
+    external: true
+
+volumes:
+  pgdata:
+```
+
+```bash
+# 启动
+JWT_SECRET=$(openssl rand -hex 32) ADMIN_PASSWORD=your-secure-password docker compose up -d
+```
 
 ### 方式 B：本地开发（前后端分离）
 
@@ -339,23 +380,30 @@ access_logs      id(bigserial), user_id, path, status, bytes, latency_ms, ts
 
 ```
 DevCapsule/
-├── docker-compose.yml        # 生产部署：api + nginx + postgres
-├── .env.example              # compose 部署配置模板（JWT_SECRET / ADMIN_PASSWORD 必填）
+├── docker-compose.yml           # 单一镜像部署配置
+├── .env.example                 # 环境变量模板（JWT_SECRET / ADMIN_PASSWORD 必填）
+├── .github/
+│   └── workflows/
+│       └── build.yml            # GitHub Actions 自动构建镜像
 ├── backend/
-│   ├── Dockerfile            # 单二进制镜像（前端 dist 在构建时 embed）
-│   ├── cmd/server/main.go    # 入口：配置 → 数据库迁移 → Docker → 启动
+│   ├── Dockerfile               # 多阶段构建：Go 编译 + PostgreSQL + Nginx + Supervisor
+│   ├── entrypoint.sh            # 容器启动脚本（初始化 PostgreSQL）
+│   ├── supervisord.conf         # 进程管理配置
+│   ├── nginx.conf               # Nginx 反代配置（SSE/WS 透传）
+│   ├── cmd/server/main.go       # 入口：配置 → 数据库迁移 → Docker → 启动
 │   └── internal/
-│       ├── api/              # 路由、中间件、handler（含 SPA 静态托管；web/dist 为 embed 前端产物）
-│       ├── auth/             # JWT（30min access + 24h refresh）、argon2 密码哈希
-│       ├── batch/            # 批量账号生成（课程名推导前缀、随机密码、CSV 导出）
-│       ├── config/           # 环境变量配置
-│       ├── docker/           # Docker SDK 封装、编排（Provision/IdleStop/Expire/Reconcile/Stats/健康检查）
-│       ├── model/            # 数据模型
-│       ├── proxy/            # 反向代理（SSE/WS 透传、Basic Auth 上游、/port/ 路由、访问日志）
-│       └── store/            # 存储接口 + PostgreSQL / 内存实现
-├── frontend/                 # Vue3 管理台 + 用户门户（vite 构建到 backend/internal/api/web/dist）
-├── deploy/nginx.conf         # 生产 nginx 反代（SSE/WS 透传）
-└── e2e/run.sh                # 端到端测试脚本（登录→建号→建容器→代理→改密→统计）
+│       ├── api/                 # 路由、中间件、handler（含 SPA 静态托管；web/dist 为 embed 前端产物）
+│       ├── auth/                # JWT（30min access + 24h refresh）、argon2 密码哈希
+│       ├── batch/               # 批量账号生成（课程名推导前缀、随机密码、CSV 导出）
+│       ├── config/              # 环境变量配置
+│       ├── docker/              # Docker SDK 封装、编排（Provision/IdleStop/Expire/Reconcile/Stats/健康检查）
+│       ├── model/               # 数据模型
+│       ├── proxy/               # 反向代理（SSE/WS 透传、Basic Auth 上游、/port/ 路由、访问日志）
+│       └── store/               # 存储接口 + PostgreSQL / 内存实现
+├── frontend/                    # Vue3 管理台 + 用户门户（vite 构建到 backend/internal/api/web/dist）
+├── deploy/
+│   └── nginx.conf               # 独立部署时的 nginx 配置（多容器模式）
+└── e2e/run.sh                   # 端到端测试脚本
 ```
 
 ## 技术选型
@@ -363,7 +411,8 @@ DevCapsule/
 - **后端**：Go（标准库 net/http + Docker SDK + pgx + golang-jwt + argon2）
 - **前端**：Vue3 + Vite + vue-router（管理台 + 用户门户两个路由区），构建产物 `embed` 进 Go 二进制单文件分发
 - **数据库**：PostgreSQL 17（存储层为接口，本地开发可切内存实现）
-- **部署**：docker-compose（`api`、`nginx`、`postgres`）+ `.env` 管理密钥；api 单二进制含前端静态资源
+- **部署**：单一镜像（PostgreSQL + Nginx + Go API），Supervisor 进程管理，GitHub Actions 自动构建
+- **CI/CD**：GitHub Actions → GitHub Container Registry (ghcr.io)
 
 ## 开发与测试
 
@@ -377,10 +426,39 @@ go build ./cmd/server
 bash e2e/run.sh      # 覆盖：登录 → 建模板 → 批量建号 → 批量建容器 → 学生访问代理 → 批量操作 → 改密 → Dashboard 统计
 ```
 
+### 构建单一镜像
+
+```bash
+# 本地构建
+docker build -t devcapsule:latest ./backend
+
+# 运行
+docker run -d --name devcapsule -p 80:80 \
+  -v pgdata:/var/lib/postgresql/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e JWT_SECRET=$(openssl rand -hex 32) \
+  -e ADMIN_PASSWORD=admin123 \
+  devcapsule:latest
+```
+
+### CI/CD 自动构建
+
+推送到 `main` 分支或创建 `v*` tag 时，GitHub Actions 自动构建并推送到 ghcr.io：
+
+```bash
+# 触发构建
+git push origin main
+git tag v1.0.0 && git push origin v1.0.0
+
+# 拉取使用
+docker pull ghcr.io/wjw1-evan/opencode-cloud:latest
+```
+
 当前实现状态：
 - ✅ Go 后端：认证（JWT + 限流）、批量建号、模板（多端口/环境变量/启动命令）、容器编排（幂等批量/空闲停/到期停/状态调和/实时 stats）、反向代理（SSE/WS、双层认证、多端口路由、访问日志）、后台周期任务
 - ✅ 前端：Vue3 管理台（总览 / 用户与容器 / 镜像模板 / 使用帮助）+ 用户门户（查看状态、打开环境、自助改密），构建产物 embed 进 Go 二进制
-- ✅ 部署：docker-compose（api/nginx/postgres）+ `.env`、`deploy/nginx.conf`、e2e 脚本
+- ✅ 部署：单一镜像（PostgreSQL + Nginx + Go API）、Supervisor 进程管理、GitHub Actions 自动构建
+- ✅ CI/CD：GitHub Actions → GitHub Container Registry (ghcr.io)
 - 🚧 待完善：生产 TLS 全链路验证、通用工具路径改写（见里程碑）
 
 ## 已知风险与 FAQ
