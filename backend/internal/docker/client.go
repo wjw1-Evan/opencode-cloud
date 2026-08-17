@@ -170,19 +170,54 @@ func (c *Client) Restart(ctx context.Context, id string) error {
 	return c.cli.ContainerRestart(ctx, id, container.StopOptions{})
 }
 
-// InspectStatus returns the container state. empty string if not found.
-func (c *Client) InspectStatus(ctx context.Context, id string) (string, error) {
+// InspectInfo describes the runtime state of a container.
+type InspectInfo struct {
+	Status    string
+	StartedAt string // RFC3339 timestamp of the last start, "" if never started
+}
+
+// InspectRuntime returns the container state and last start time.
+func (c *Client) InspectRuntime(ctx context.Context, id string) (*InspectInfo, error) {
 	info, err := c.cli.ContainerInspect(ctx, id)
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return "", nil
+			return &InspectInfo{}, nil
 		}
+		return nil, err
+	}
+	out := &InspectInfo{}
+	if info.State != nil {
+		out.Status = string(info.State.Status)
+		out.StartedAt = info.State.StartedAt
+	}
+	return out, nil
+}
+
+// InspectStatus returns the container state. empty string if not found.
+func (c *Client) InspectStatus(ctx context.Context, id string) (string, error) {
+	info, err := c.InspectRuntime(ctx, id)
+	if err != nil {
 		return "", err
 	}
-	if info.State == nil {
-		return "", nil
+	return info.Status, nil
+}
+
+// ListContainerNetworks returns the networks each container is attached to,
+// keyed by container ID. Uses one batched API call regardless of container
+// count, so the admin UI can show the real network per container.
+// The list endpoint's NetworkSettings.Networks map is keyed by network name.
+func (c *Client) ListContainerNetworks(ctx context.Context) (map[string][]string, error) {
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, err
 	}
-	return string(info.State.Status), nil
+	out := make(map[string][]string, len(containers))
+	for _, ct := range containers {
+		for name := range ct.NetworkSettings.Networks {
+			out[ct.ID] = append(out[ct.ID], name)
+		}
+	}
+	return out, nil
 }
 
 // WaitHealthy polls the container until its HTTP endpoint responds or times out.

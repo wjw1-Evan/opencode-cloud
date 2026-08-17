@@ -48,8 +48,8 @@ func (s *Server) JWTAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "user not found")
 			return
 		}
-		if user.Status == model.StatusDisabled || user.Status == model.StatusExpired {
-			writeError(w, http.StatusForbidden, "account "+string(user.Status))
+		if st := user.EffectiveStatus(); st == model.StatusDisabled || st == model.StatusExpired {
+			writeError(w, http.StatusForbidden, "account "+string(st))
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxUser, user)

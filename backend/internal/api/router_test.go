@@ -23,6 +23,44 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+// TestRefreshEmptyBodyMatchesFrontend verifies the silent-refresh endpoint
+// accepts the empty-body POST the SPA sends (the refresh token lives in an
+// HttpOnly cookie JS cannot read). A 400 here would bounce users to the
+// login page every 30 minutes.
+func TestRefreshEmptyBodyMatchesFrontend(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+
+	login := s.do(t, "POST", "/platform/auth/login", "", `{"username":"admin","password":"admin123"}`)
+	var refresh string
+	for _, c := range login.Result().Cookies() {
+		if c.Name == "refresh_token" {
+			refresh = c.Value
+		}
+	}
+	if refresh == "" {
+		t.Fatal("no refresh cookie from login")
+	}
+
+	req := httptest.NewRequest("POST", "/platform/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: "refresh_token", Value: refresh})
+	rr := httptest.NewRecorder()
+	s.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("empty-body refresh must succeed, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rotated := false
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == "refresh_token" && c.Value != "" && c.Value != refresh {
+			rotated = true
+		}
+	}
+	if !rotated {
+		t.Fatal("expected the refresh cookie to be rotated")
+	}
+}
+
 func TestInitializeConcurrentCreatesSingleAdmin(t *testing.T) {
 	s, st, _ := newTestServer(t)
 	var wg sync.WaitGroup
@@ -363,6 +401,85 @@ func TestUpdateAndDeleteUser(t *testing.T) {
 	}
 	if rec := s.do(t, "POST", "/platform/auth/login", "", `{"username":"stu001","password":"newpass456"}`); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected deleted user rejected, got %d", rec.Code)
+	}
+}
+
+func TestExpiryStatusConsistency(t *testing.T) {
+	s, st, _ := newTestServer(t)
+	addUser(t, st, "admin", "admin123", "admin")
+	user := addUser(t, st, "stu001", "pass12345", "user")
+	token := s.login(t, "admin", "admin123")
+
+	patch := func(body string) map[string]any {
+		t.Helper()
+		rec := s.do(t, "PATCH", "/platform/admin/users/"+user.ID, token, body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("patch %s failed: %d %s", body, rec.Code, rec.Body.String())
+		}
+		var out struct {
+			Data map[string]any `json:"data"`
+		}
+		decodeJSON(t, rec, &out)
+		return out.Data
+	}
+
+	// effFromJSON derives the state the same way the model does: the API
+	// returns the stored facts (manual_disabled, expires_at), never a status.
+	effFromJSON := func(u map[string]any) string {
+		if exp, _ := u["expires_at"].(string); exp != "" {
+			if t0, err := time.Parse(time.RFC3339, exp); err == nil && t0.Before(time.Now()) {
+				return "expired"
+			}
+		}
+		if md, _ := u["manual_disabled"].(bool); md {
+			return "disabled"
+		}
+		return "active"
+	}
+
+	// past-dated expiry -> the account is expired immediately (derived)
+	if got := effFromJSON(patch(`{"expires_at":"2026-01-01T00:00:00Z"}`)); got != "expired" {
+		t.Fatalf("past expiry should derive expired, got %s", got)
+	}
+
+	// enabling (manual ban off) does NOT unlock an expired account
+	if got := effFromJSON(patch(`{"status":"active"}`)); got != "expired" {
+		t.Fatalf("enable must not beat an expired account, got %s", got)
+	}
+	// manual ban cannot beat a past expiry either
+	if got := effFromJSON(patch(`{"status":"disabled"}`)); got != "expired" {
+		t.Fatalf("manual ban cannot beat expiry either, got %s", got)
+	}
+
+	// future expiry + clearing the ban -> active again
+	if got := effFromJSON(patch(`{"status":"active","expires_at":"2027-01-01T00:00:00Z"}`)); got != "active" {
+		t.Fatalf("future expiry with no ban should derive active, got %s", got)
+	}
+
+	// manual disable while still valid
+	if got := effFromJSON(patch(`{"status":"disabled"}`)); got != "disabled" {
+		t.Fatalf("manual disable should derive disabled, got %s", got)
+	}
+	// manual enable restores access (expiry still in the future)
+	if got := effFromJSON(patch(`{"status":"active"}`)); got != "active" {
+		t.Fatalf("manual enable should derive active, got %s", got)
+	}
+
+	// login is rejected immediately once expired (no 5-minute window)
+	past := time.Now().Add(-time.Hour)
+	if err := st.UpdateUser(t.Context(), &model.User{
+		ID: user.ID, Username: user.Username, PasswordHash: user.PasswordHash,
+		Role: model.RoleUser, ExpiresAt: &past, CreatedAt: user.CreatedAt, UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := s.do(t, "POST", "/platform/auth/login", "", `{"username":"stu001","password":"pass12345"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("expired account must be rejected at login, got %d", rec.Code)
+	}
+
+	// unrelated updates (password only) never touch the account's state
+	if got := effFromJSON(patch(`{"expires_at":"2026-06-01T00:00:00Z","password":"other1234"}`)); got != "expired" {
+		t.Fatalf("past expiry should still derive expired, got %s", got)
 	}
 }
 
@@ -840,7 +957,7 @@ func TestRefreshToken(t *testing.T) {
 
 	// disabled user refresh should fail
 	disabled := addUser(t, st, "disabled", "pass12345", "user")
-	disabled.Status = model.StatusDisabled
+	disabled.ManualDisabled = true
 	st.UpdateUser(t.Context(), disabled)
 	_, refresh, _ := s.tm.Issue(disabled.ID, disabled.Username, string(disabled.Role))
 	rec = s.do(t, "POST", "/platform/auth/refresh", "", `{"refresh":"`+refresh+`"}`)

@@ -31,8 +31,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	userByID := map[string]*model.User{}
 	userByCourse := map[string]int64{}
 	for _, u := range users {
-		userStatus[string(u.Status)]++
-		if u.Status == model.StatusActive {
+		st := string(u.EffectiveStatus())
+		userStatus[st]++
+		if st == string(model.StatusActive) {
 			active++
 		}
 		userByID[u.ID] = u

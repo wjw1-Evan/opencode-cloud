@@ -31,7 +31,6 @@ func TestPostgresCRUD(t *testing.T) {
 		PasswordHash:  "hash",
 		PasswordPlain: "plainpass",
 		Role:          model.RoleUser,
-		Status:        model.StatusActive,
 		Course:        "Python 基础",
 		CPULimit:      0.5,
 		MemLimit:      1 << 30,
@@ -140,19 +139,24 @@ func TestPostgresCRUD(t *testing.T) {
 		t.Fatal("expected access logs")
 	}
 
-	// expiry
+	// expiry + manual ban round-trip: the derived status must reflect the
+	// stored facts (no status column exists anymore)
 	exp := now.Add(-time.Hour)
-	eu := &model.User{ID: model.NewID(), Username: "pg-exp" + model.NewID()[:6], PasswordHash: "h", Role: model.RoleUser, Status: model.StatusActive, ExpiresAt: &exp, CreatedAt: now, UpdatedAt: now}
+	eu := &model.User{ID: model.NewID(), Username: "pg-exp" + model.NewID()[:6], PasswordHash: "h", Role: model.RoleUser, ExpiresAt: &exp, CreatedAt: now, UpdatedAt: now}
 	if err := st.CreateUser(ctx, eu); err != nil {
 		t.Fatalf("create expire user: %v", err)
 	}
-	n, err := st.ExpireUsers(ctx, now)
-	if err != nil || n < 1 {
-		t.Fatalf("expire users: %v n=%d", err, n)
-	}
 	euGot, _ := st.GetUserByID(ctx, eu.ID)
-	if euGot.Status != model.StatusExpired {
-		t.Fatalf("expected expired, got %s", euGot.Status)
+	if euGot.EffectiveStatus() != model.StatusExpired {
+		t.Fatalf("expected derived expired, got %s", euGot.EffectiveStatus())
+	}
+	euGot.ManualDisabled = true
+	if err := st.UpdateUser(ctx, euGot); err != nil {
+		t.Fatalf("update manual ban: %v", err)
+	}
+	euGot2, _ := st.GetUserByID(ctx, eu.ID)
+	if !euGot2.ManualDisabled {
+		t.Fatal("manual_disabled not persisted")
 	}
 
 	// stats

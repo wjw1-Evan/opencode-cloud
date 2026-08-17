@@ -284,20 +284,21 @@ func (o *Orchestrator) IdleStop(ctx context.Context, idle time.Duration, users [
 	return stopped, nil
 }
 
-// ExpireAndStop marks expired users and stops their containers.
+// ExpireAndStop stops the containers of accounts whose expiry has passed.
+// Account status itself is never mutated here: it is derived on every check
+// from expires_at, so access is rejected the moment the expiry passes
+// (no window where a stored status lags behind reality).
 func (o *Orchestrator) ExpireAndStop(ctx context.Context) (int64, error) {
-	n, err := o.st.ExpireUsers(ctx, time.Now())
+	users, err := o.st.ListUsers(ctx)
 	if err != nil {
 		return 0, err
 	}
-	users, err := o.st.ListUsers(ctx)
-	if err != nil {
-		return n, err
-	}
+	var n int64
 	for _, u := range users {
-		if u.Status != model.StatusExpired {
+		if u.EffectiveStatus() != model.StatusExpired {
 			continue
 		}
+		n++
 		rec, err := o.st.GetContainerByUserID(ctx, u.ID)
 		if err != nil || rec.ContainerID == "" || rec.Status == model.ContainerStopped {
 			continue
@@ -349,11 +350,11 @@ func (o *Orchestrator) Reconcile(ctx context.Context) error {
 	return nil
 }
 
-// SyncStatus checks the live docker state of one container record and updates
-// the stored status if they differ. Returns the (possibly updated) record.
-func (o *Orchestrator) SyncStatus(ctx context.Context, rec *model.Container) (*model.Container, error) {
+// syncAndRuntime inspects one container once, reconciles the stored status
+// and returns the last start time (RFC3339, "" if never started).
+func (o *Orchestrator) syncAndRuntime(ctx context.Context, rec *model.Container) (string, error) {
 	if !o.dc.Available() {
-		return rec, nil
+		return "", nil
 	}
 	prev := rec.Status
 	if rec.ContainerID == "" {
@@ -362,13 +363,13 @@ func (o *Orchestrator) SyncStatus(ctx context.Context, rec *model.Container) (*m
 			rec.UpdatedAt = time.Now().UTC()
 			o.st.UpdateContainer(ctx, rec)
 		}
-		return rec, nil
+		return "", nil
 	}
-	status, err := o.dc.InspectStatus(ctx, rec.ContainerID)
+	info, err := o.dc.InspectRuntime(ctx, rec.ContainerID)
 	if err != nil {
-		return rec, err
+		return "", err
 	}
-	switch status {
+	switch info.Status {
 	case "running":
 		rec.Status = model.ContainerRunning
 	case "exited", "created", "dead":
@@ -378,13 +379,35 @@ func (o *Orchestrator) SyncStatus(ctx context.Context, rec *model.Container) (*m
 		rec.ContainerID = ""
 	default:
 		// paused / restarting: leave as-is
-		return rec, nil
+		return info.StartedAt, nil
 	}
 	if rec.Status != prev {
 		rec.UpdatedAt = time.Now().UTC()
 		o.st.UpdateContainer(ctx, rec)
 	}
-	return rec, nil
+	return info.StartedAt, nil
+}
+
+// SyncStatus checks the live docker state of one container record and updates
+// the stored status if they differ. Returns the (possibly updated) record.
+func (o *Orchestrator) SyncStatus(ctx context.Context, rec *model.Container) (*model.Container, error) {
+	_, err := o.syncAndRuntime(ctx, rec)
+	return rec, err
+}
+
+// SyncRuntime reconciles the stored status like SyncStatus and also returns
+// the container's last start time.
+func (o *Orchestrator) SyncRuntime(ctx context.Context, rec *model.Container) (string, error) {
+	return o.syncAndRuntime(ctx, rec)
+}
+
+// ContainerNetworks returns each container's attached networks keyed by
+// container ID, or nil when the docker client is unavailable.
+func (o *Orchestrator) ContainerNetworks(ctx context.Context) (map[string][]string, error) {
+	if !o.dc.Available() {
+		return nil, nil
+	}
+	return o.dc.ListContainerNetworks(ctx)
 }
 
 // Stats returns the live CPU/mem usage for a container.

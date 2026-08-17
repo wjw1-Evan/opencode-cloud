@@ -54,7 +54,6 @@ func addUser(t *testing.T, st store.Store, username, password, role string) *mod
 		Username:     username,
 		PasswordHash: hash,
 		Role:         model.Role(role),
-		Status:       model.StatusActive,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}

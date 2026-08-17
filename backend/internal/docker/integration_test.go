@@ -133,7 +133,7 @@ func TestOrchestratorProvisionLifecycle(t *testing.T) {
 
 	orch := NewOrchestrator(c, st, testNetwork, 3)
 
-	user := &model.User{ID: model.NewID(), Username: "ocitest1", CPULimit: 0.5, MemLimit: 1 << 30, Status: model.StatusActive}
+	user := &model.User{ID: model.NewID(), Username: "ocitest1", CPULimit: 0.5, MemLimit: 1 << 30}
 	tpl := &model.Template{
 		ID:           model.NewID(),
 		Name:         "itest",
@@ -208,7 +208,7 @@ func TestOrchestratorIdleStopAndExpire(t *testing.T) {
 	st := store.NewMemory()
 	orch := NewOrchestrator(c, st, testNetwork, 3)
 
-	user := &model.User{ID: model.NewID(), Username: "ocitest2", CPULimit: 0.5, MemLimit: 1 << 30, Status: model.StatusActive}
+	user := &model.User{ID: model.NewID(), Username: "ocitest2", CPULimit: 0.5, MemLimit: 1 << 30}
 	if err := st.CreateUser(ctx, user); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestSyncStatusDetectsExternalStopAndWake(t *testing.T) {
 	st := store.NewMemory()
 	orch := NewOrchestrator(c, st, testNetwork, 3)
 
-	user := &model.User{ID: model.NewID(), Username: "ocitest3", CPULimit: 0.5, MemLimit: 1 << 30, Status: model.StatusActive}
+	user := &model.User{ID: model.NewID(), Username: "ocitest3", CPULimit: 0.5, MemLimit: 1 << 30}
 	if err := st.CreateUser(ctx, user); err != nil {
 		t.Fatalf("create user: %v", err)
 	}

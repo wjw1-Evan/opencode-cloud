@@ -132,7 +132,6 @@ func (s *Server) handleBatchUsers(w http.ResponseWriter, r *http.Request) {
 			PasswordHash:  hashes[i],
 			PasswordPlain: acc.Password,
 			Role:          model.RoleUser,
-			Status:        model.StatusActive,
 			Course:        req.Course,
 			ExpiresAt:     expires,
 			CPULimit:      req.CPULimit,
@@ -166,12 +165,13 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateUserRequest struct {
-	Password      *string  `json:"password"`
-	Status        *string  `json:"status"`
-	Course        *string  `json:"course"`
-	ExpiresInDays *int     `json:"expires_in_days"`
-	CPULimit      *float64 `json:"cpu_limit"`
-	MemLimit      *int64   `json:"mem_limit"`
+	Password      *string    `json:"password"`
+	Status        *string    `json:"status"`
+	Course        *string    `json:"course"`
+	ExpiresInDays *int       `json:"expires_in_days"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	CPULimit      *float64   `json:"cpu_limit"`
+	MemLimit      *int64     `json:"mem_limit"`
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -196,9 +196,12 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		user.PasswordPlain = *req.Password
 	}
 	if req.Status != nil {
+		// manual ban toggle; "expired" is a derived state and cannot be set
 		switch model.UserStatus(*req.Status) {
-		case model.StatusActive, model.StatusDisabled, model.StatusExpired:
-			user.Status = model.UserStatus(*req.Status)
+		case model.StatusDisabled:
+			user.ManualDisabled = true
+		case model.StatusActive:
+			user.ManualDisabled = false
 		default:
 			writeError(w, http.StatusBadRequest, "invalid status")
 			return
@@ -215,6 +218,11 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			user.ExpiresAt = nil
 		}
 	}
+	if req.ExpiresAt != nil {
+		user.ExpiresAt = req.ExpiresAt
+	}
+	// Status is never stored: the account's effective state (active / disabled /
+	// expired) is derived from ManualDisabled + ExpiresAt on every check.
 	if req.CPULimit != nil {
 		user.CPULimit = *req.CPULimit
 	}
@@ -249,7 +257,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 // batchUserActionRequest drives the multi-select bulk actions from the admin UI.
 type batchUserActionRequest struct {
 	UserIDs []string `json:"user_ids"`
-	Action  string   `json:"action"` // delete | restart | stop
+	Action  string   `json:"action"` // delete | restart | stop | start | disable | enable
 }
 
 // batchUserActionResult is one row of the bulk-operation result.
@@ -271,7 +279,7 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "delete", "restart", "stop", "start":
+	case "delete", "restart", "stop", "start", "disable", "enable":
 	default:
 		writeError(w, http.StatusBadRequest, "unknown action: "+req.Action)
 		return
@@ -341,6 +349,12 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 				res.OK = false
 				res.Error = err.Error()
 			}
+		case "disable", "enable":
+			user.ManualDisabled = req.Action == "disable"
+			if err := s.st.UpdateUser(r.Context(), user); err != nil {
+				res.OK = false
+				res.Error = err.Error()
+			}
 		}
 		results = append(results, res)
 	}
@@ -365,7 +379,7 @@ func (s *Server) handleExportUsers(w http.ResponseWriter, r *http.Request) {
 		if u.ExpiresAt != nil {
 			exp = u.ExpiresAt.Format(time.RFC3339)
 		}
-		out = append(out, row{Username: u.Username, Status: string(u.Status), Expires: exp, Role: string(u.Role)})
+		out = append(out, row{Username: u.Username, Status: string(u.EffectiveStatus()), Expires: exp, Role: string(u.Role)})
 	}
 	writeData(w, out)
 }

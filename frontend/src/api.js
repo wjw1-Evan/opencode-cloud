@@ -98,6 +98,7 @@ export const api = {
   updateTemplate: (id, payload) => request('PUT', `/platform/admin/templates/${id}`, payload),
   deleteTemplate: (id) => request('DELETE', `/platform/admin/templates/${id}`),
   // stats
+  platform: () => request('GET', '/platform/admin/platform'),
   dashboard: () => request('GET', '/platform/admin/stats/dashboard'),
 }
 

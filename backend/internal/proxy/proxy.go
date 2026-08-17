@@ -108,11 +108,11 @@ func (p *Proxy) Handler(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/platform/auth/logout", http.StatusFound)
 			return
 		}
-		if user.Status == model.StatusDisabled {
+		switch st := user.EffectiveStatus(); st {
+		case model.StatusDisabled:
 			http.Error(w, "account disabled", http.StatusForbidden)
 			return
-		}
-		if user.Status == model.StatusExpired {
+		case model.StatusExpired:
 			http.Error(w, "account expired", http.StatusForbidden)
 			return
 		}

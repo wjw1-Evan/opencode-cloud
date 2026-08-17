@@ -30,7 +30,7 @@ func TestMemoryUserCRUD(t *testing.T) {
 	ctx := context.Background()
 	u := &model.User{
 		ID: "u1", Username: "alice", PasswordHash: "h", PasswordPlain: "p",
-		Role: model.RoleUser, Status: model.StatusActive,
+		Role: model.RoleUser,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 
@@ -317,30 +317,26 @@ func TestMemoryStatsContainersByStatus(t *testing.T) {
 	}
 }
 
-func TestMemoryExpireUsers(t *testing.T) {
-	m := NewMemory()
-	ctx := context.Background()
+func TestEffectiveStatusDerivation(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(time.Hour)
 
-	m.EnsureUser(&model.User{ID: "u1", Username: "a", Status: model.StatusActive, ExpiresAt: &past})
-	m.EnsureUser(&model.User{ID: "u2", Username: "b", Status: model.StatusActive, ExpiresAt: &future})
-	m.EnsureUser(&model.User{ID: "u3", Username: "c", Status: model.StatusActive, ExpiresAt: nil})
-
-	n, err := m.ExpireUsers(ctx, time.Now())
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name string
+		u    model.User
+		want model.UserStatus
+	}{
+		{"no facts", model.User{}, model.StatusActive},
+		{"future expiry", model.User{ExpiresAt: &future}, model.StatusActive},
+		{"past expiry", model.User{ExpiresAt: &past}, model.StatusExpired},
+		{"manual ban", model.User{ManualDisabled: true}, model.StatusDisabled},
+		{"manual ban with future expiry", model.User{ManualDisabled: true, ExpiresAt: &future}, model.StatusDisabled},
+		// expiry wins over the manual ban
+		{"manual ban with past expiry", model.User{ManualDisabled: true, ExpiresAt: &past}, model.StatusExpired},
 	}
-	if n != 1 {
-		t.Fatalf("expected 1 expired, got %d", n)
-	}
-
-	u1, _ := m.GetUserByID(ctx, "u1")
-	if u1.Status != model.StatusExpired {
-		t.Fatalf("u1 should be expired, got %s", u1.Status)
-	}
-	u2, _ := m.GetUserByID(ctx, "u2")
-	if u2.Status != model.StatusActive {
-		t.Fatalf("u2 should still be active, got %s", u2.Status)
+	for _, c := range cases {
+		if got := c.u.EffectiveStatus(); got != c.want {
+			t.Errorf("%s: EffectiveStatus = %s, want %s", c.name, got, c.want)
+		}
 	}
 }

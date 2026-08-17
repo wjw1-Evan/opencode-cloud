@@ -90,6 +90,9 @@ func (s *Server) Router() http.Handler {
 	apiMux.HandleFunc("DELETE /admin/images/{id}", s.JWTAuth(s.AdminOnly(s.handleDeleteImage)))
 	apiMux.HandleFunc("POST /admin/images/pull", s.JWTAuth(s.AdminOnly(s.handlePullImage)))
 
+	// platform config
+	apiMux.HandleFunc("GET /admin/platform", s.JWTAuth(s.AdminOnly(s.handlePlatform)))
+
 	// stats
 	apiMux.HandleFunc("GET /admin/stats/dashboard", s.JWTAuth(s.AdminOnly(s.handleDashboard)))
 
@@ -133,12 +136,25 @@ func (s *Server) rootHandler() http.Handler {
 				token = c.Value
 			}
 		}
+		var claims *auth.Claims
+		var err error
 		if token == "" {
-			s.staticHandler().ServeHTTP(w, r)
-			return
+			// No access token at all: still try the refresh cookie so a lost
+			// access cookie (or a fresh page load after expiry) does not
+			// bounce the student to the login screen mid-session.
+			claims, _ = s.tryRefresh(w, r)
+		} else {
+			claims, err = s.tm.ParseAccess(token)
+			if err != nil {
+				// Access token expired but the 24h refresh cookie may still be
+				// valid: silently rotate both tokens and keep the session
+				// alive instead of serving the login page.
+				if c, ok := s.tryRefresh(w, r); ok {
+					claims = c
+				}
+			}
 		}
-		claims, err := s.tm.ParseAccess(token)
-		if err != nil {
+		if claims == nil {
 			s.staticHandler().ServeHTTP(w, r)
 			return
 		}

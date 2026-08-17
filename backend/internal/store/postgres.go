@@ -37,19 +37,19 @@ func (p *Postgres) Close() error { return p.db.Close() }
 
 const schema = `
 CREATE TABLE IF NOT EXISTS users (
-    id             TEXT PRIMARY KEY,
-    username       TEXT NOT NULL UNIQUE,
-    password_hash  TEXT NOT NULL,
-    password_plain TEXT NOT NULL DEFAULT '',
-    role           TEXT NOT NULL DEFAULT 'user',
-    status         TEXT NOT NULL DEFAULT 'active',
-    course         TEXT NOT NULL DEFAULT '',
-    expires_at     TIMESTAMPTZ,
-    cpu_limit      DOUBLE PRECISION NOT NULL DEFAULT 0.5,
-    mem_limit      BIGINT NOT NULL DEFAULT 1073741824,
-    container_id   TEXT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    id              TEXT PRIMARY KEY,
+    username        TEXT NOT NULL UNIQUE,
+    password_hash   TEXT NOT NULL,
+    password_plain  TEXT NOT NULL DEFAULT '',
+    role            TEXT NOT NULL DEFAULT 'user',
+    manual_disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    course          TEXT NOT NULL DEFAULT '',
+    expires_at      TIMESTAMPTZ,
+    cpu_limit       DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    mem_limit       BIGINT NOT NULL DEFAULT 1073741824,
+    container_id    TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS user_containers (
     id             TEXT PRIMARY KEY,
@@ -87,6 +87,16 @@ ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS run_user TEXT NOT NULL DEFA
 ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS cap_add JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS course TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_plain TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS manual_disabled BOOLEAN NOT NULL DEFAULT FALSE;
+-- migrate from the legacy status model: disabled -> manual_disabled
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='status') THEN
+    UPDATE users SET manual_disabled = TRUE WHERE status = 'disabled';
+  END IF;
+END $$;
+ALTER TABLE users DROP COLUMN IF EXISTS status;
+ALTER TABLE users DROP COLUMN IF EXISTS auto_disabled;
 CREATE TABLE IF NOT EXISTS access_logs (
     id         BIGSERIAL PRIMARY KEY,
     user_id    TEXT,
@@ -108,30 +118,30 @@ func (p *Postgres) Migrate(ctx context.Context) error {
 
 func (p *Postgres) CreateUser(ctx context.Context, u *model.User) error {
 	_, err := p.db.ExecContext(ctx, `
-INSERT INTO users (id, username, password_hash, password_plain, role, status, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at)
+INSERT INTO users (id, username, password_hash, password_plain, role, manual_disabled, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		u.ID, u.Username, u.PasswordHash, u.PasswordPlain, string(u.Role), string(u.Status), u.Course,
+		u.ID, u.Username, u.PasswordHash, u.PasswordPlain, string(u.Role), u.ManualDisabled, u.Course,
 		u.ExpiresAt, u.CPULimit, u.MemLimit, nullString(u.ContainerID), u.CreatedAt, u.UpdatedAt)
 	return err
 }
 
 func (p *Postgres) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	return p.scanUser(p.db.QueryRowContext(ctx, `
-SELECT id, username, password_hash, password_plain, role, status, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
+SELECT id, username, password_hash, password_plain, role, manual_disabled, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
 FROM users WHERE id=$1`, id))
 }
 
 func (p *Postgres) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
 	return p.scanUser(p.db.QueryRowContext(ctx, `
-SELECT id, username, password_hash, password_plain, role, status, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
+SELECT id, username, password_hash, password_plain, role, manual_disabled, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
 FROM users WHERE username=$1`, username))
 }
 
 func (p *Postgres) scanUser(row interface{ Scan(...any) error }) (*model.User, error) {
 	var u model.User
 	var containerID sql.NullString
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.PasswordPlain, (*string)(&u.Role), (*string)(&u.Status),
-		&u.Course, &u.ExpiresAt, &u.CPULimit, &u.MemLimit, &containerID, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.PasswordPlain, (*string)(&u.Role),
+		&u.ManualDisabled, &u.Course, &u.ExpiresAt, &u.CPULimit, &u.MemLimit, &containerID, &u.CreatedAt, &u.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -144,7 +154,7 @@ func (p *Postgres) scanUser(row interface{ Scan(...any) error }) (*model.User, e
 
 func (p *Postgres) ListUsers(ctx context.Context) ([]*model.User, error) {
 	rows, err := p.db.QueryContext(ctx, `
-SELECT id, username, password_hash, password_plain, role, status, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
+SELECT id, username, password_hash, password_plain, role, manual_disabled, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
 FROM users ORDER BY course, username`)
 	if err != nil {
 		return nil, err
@@ -166,7 +176,7 @@ func (p *Postgres) ListUsersByIDs(ctx context.Context, ids []string) ([]*model.U
 		return nil, nil
 	}
 	rows, err := p.db.QueryContext(ctx, `
-SELECT id, username, password_hash, password_plain, role, status, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
+SELECT id, username, password_hash, password_plain, role, manual_disabled, course, expires_at, cpu_limit, mem_limit, container_id, created_at, updated_at
 FROM users WHERE id = ANY($1) ORDER BY course, username`, ids)
 	if err != nil {
 		return nil, err
@@ -185,9 +195,9 @@ FROM users WHERE id = ANY($1) ORDER BY course, username`, ids)
 
 func (p *Postgres) UpdateUser(ctx context.Context, u *model.User) error {
 	res, err := p.db.ExecContext(ctx, `
-UPDATE users SET password_hash=$2, password_plain=$3, role=$4, status=$5, course=$6, expires_at=$7, cpu_limit=$8, mem_limit=$9, container_id=$10, updated_at=now()
+UPDATE users SET password_hash=$2, password_plain=$3, role=$4, manual_disabled=$5, course=$6, expires_at=$7, cpu_limit=$8, mem_limit=$9, container_id=$10, updated_at=now()
 WHERE id=$1`,
-		u.ID, u.PasswordHash, u.PasswordPlain, string(u.Role), string(u.Status), u.Course, u.ExpiresAt, u.CPULimit, u.MemLimit, nullString(u.ContainerID))
+		u.ID, u.PasswordHash, u.PasswordPlain, string(u.Role), u.ManualDisabled, u.Course, u.ExpiresAt, u.CPULimit, u.MemLimit, nullString(u.ContainerID))
 	if err != nil {
 		return err
 	}
@@ -513,17 +523,6 @@ GROUP BY 1`, time.Now().Add(-24*time.Hour))
 		}
 	}
 	return &s, rows.Err()
-}
-
-func (p *Postgres) ExpireUsers(ctx context.Context, now time.Time) (int64, error) {
-	res, err := p.db.ExecContext(ctx, `
-UPDATE users SET status='expired', updated_at=now()
-WHERE status IN ('active') AND expires_at IS NOT NULL AND expires_at < $1`, now)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return n, nil
 }
 
 func mustJSON(v any) []byte {

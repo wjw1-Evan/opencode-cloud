@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
+	"strings"
 
 	"devcapsule/backend/internal/docker"
 	"devcapsule/backend/internal/model"
@@ -21,12 +23,17 @@ func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// reconcile with live docker state so the UI always reflects reality
+	startedAt := map[string]string{}
 	for _, c := range recs {
 		if c.ContainerID == "" {
 			continue
 		}
-		s.orch.SyncStatus(r.Context(), c)
+		if t, err := s.orch.SyncRuntime(r.Context(), c); err == nil && t != "" {
+			startedAt[c.ContainerID] = t
+		}
 	}
+	// real network per container, shown in the admin UI (single batched call)
+	nets, _ := s.orch.ContainerNetworks(r.Context())
 	userIDs := make([]string, 0, len(recs))
 	for _, c := range recs {
 		userIDs = append(userIDs, c.UserID)
@@ -34,7 +41,7 @@ func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
 	users, _ := s.st.ListUsersByIDs(r.Context(), userIDs)
 	byID := map[string]*UserView{}
 	for _, u := range users {
-		byID[u.ID] = &UserView{Username: u.Username, Status: string(u.Status)}
+		byID[u.ID] = &UserView{Username: u.Username, Status: string(u.EffectiveStatus())}
 	}
 	tpls, _ := s.st.ListTemplates(r.Context())
 	tplByID := map[string]*model.Template{}
@@ -49,9 +56,15 @@ func (s *Server) handleListContainers(w http.ResponseWriter, r *http.Request) {
 	out := make([]view, 0, len(recs))
 	for _, c := range recs {
 		cv := toContainerView(c)
+		cv.ExpectedNet = s.cfg.NetworkName
 		if t, ok := tplByID[c.TemplateID]; ok {
 			cv.ExtraPorts = t.ExtraPorts
 		}
+		if names := nets[c.ContainerID]; len(names) > 0 {
+			sort.Strings(names)
+			cv.Network = strings.Join(names, ", ")
+		}
+		cv.StartedAt = startedAt[c.ContainerID]
 		uv := byID[c.UserID]
 		out = append(out, view{
 			ContainerView: cv,
@@ -100,7 +113,7 @@ func (s *Server) handleProvisionBatch(w http.ResponseWriter, r *http.Request) {
 				selected = append(selected, u)
 			}
 		} else {
-			if u.Status == model.StatusActive || u.Status == model.StatusExpired {
+			if st := u.EffectiveStatus(); st == model.StatusActive || st == model.StatusExpired {
 				selected = append(selected, u)
 			}
 		}

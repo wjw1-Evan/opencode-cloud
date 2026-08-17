@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -36,11 +37,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	if user.Status == model.StatusDisabled {
+	switch user.EffectiveStatus() {
+	case model.StatusDisabled:
 		writeError(w, http.StatusForbidden, "account disabled")
 		return
-	}
-	if user.Status == model.StatusExpired {
+	case model.StatusExpired:
 		writeError(w, http.StatusForbidden, "account expired")
 		return
 	}
@@ -65,11 +66,52 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// setTokenCookies writes fresh access/refresh cookies (also used to rotate
+// both tokens after a silent refresh).
+func (s *Server) setTokenCookies(w http.ResponseWriter, access, refresh string) {
+	http.SetCookie(w, &http.Cookie{
+		Name: "access_token", Value: access,
+		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 1800,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name: "refresh_token", Value: refresh,
+		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400,
+	})
+}
+
+// tryRefresh silently re-authenticates via the refresh cookie and rotates
+// both token cookies. Returns the claims on success.
+func (s *Server) tryRefresh(w http.ResponseWriter, r *http.Request) (*auth.Claims, bool) {
+	c, err := r.Cookie("refresh_token")
+	if err != nil || c.Value == "" {
+		return nil, false
+	}
+	claims, err := s.tm.ParseRefresh(c.Value)
+	if err != nil {
+		return nil, false
+	}
+	user, err := s.st.GetUserByID(r.Context(), claims.UserID)
+	if err != nil {
+		return nil, false
+	}
+	if st := user.EffectiveStatus(); st == model.StatusDisabled || st == model.StatusExpired {
+		return nil, false
+	}
+	access, refresh, err := s.tm.Issue(user.ID, user.Username, string(user.Role))
+	if err != nil {
+		return nil, false
+	}
+	s.setTokenCookies(w, access, refresh)
+	return claims, true
+}
+
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Refresh string `json:"refresh"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	// The frontend calls this with an empty body (the refresh token lives in
+	// the HttpOnly cookie that JS cannot read), so an empty body is fine.
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
 		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
@@ -88,8 +130,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "user not found")
 		return
 	}
-	if user.Status == model.StatusDisabled || user.Status == model.StatusExpired {
-		writeError(w, http.StatusForbidden, "account "+string(user.Status))
+	if st := user.EffectiveStatus(); st == model.StatusDisabled || st == model.StatusExpired {
+		writeError(w, http.StatusForbidden, "account "+string(st))
 		return
 	}
 	access, refresh, err := s.tm.Issue(user.ID, user.Username, string(user.Role))
@@ -97,17 +139,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "token issue failed")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: "access_token", Value: access,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 1800,
-	})
 	// Rotate the refresh token in the cookie too: the browser keeps using the
 	// cookie on the next silent refresh, so without this it would hold a stale
 	// token until the 24h window ends and force a re-login.
-	http.SetCookie(w, &http.Cookie{
-		Name: "refresh_token", Value: refresh,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400,
-	})
+	s.setTokenCookies(w, access, refresh)
 	writeData(w, map[string]any{"access": access, "refresh": refresh})
 }
 
@@ -253,7 +288,6 @@ func (s *Server) handleInitialize(w http.ResponseWriter, r *http.Request) {
 		PasswordHash:  hash,
 		PasswordPlain: req.Password,
 		Role:          model.RoleAdmin,
-		Status:        model.StatusActive,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}); err != nil {

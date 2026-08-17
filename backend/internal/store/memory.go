@@ -369,19 +369,6 @@ func (m *Memory) AccessLogsSummary(ctx context.Context, since time.Time, onlineW
 	return &s, nil
 }
 
-func (m *Memory) ExpireUsers(ctx context.Context, now time.Time) (int64, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var n int64
-	for _, u := range m.users {
-		if u.Status == model.StatusActive && u.ExpiresAt != nil && u.ExpiresAt.Before(now) {
-			u.Status = model.StatusExpired
-			n++
-		}
-	}
-	return n, nil
-}
-
 // EnsureUser exists for tests.
 func (m *Memory) EnsureUser(u *model.User) {
 	m.mu.Lock()

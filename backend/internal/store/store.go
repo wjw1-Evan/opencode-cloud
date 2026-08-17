@@ -48,6 +48,5 @@ type Store interface {
 	ListAccessLogs(ctx context.Context, limit int) ([]*model.AccessLog, error)
 	StatsContainersByStatus(ctx context.Context) (map[model.ContainerStatus]int64, error)
 	LastAccess(ctx context.Context, userID string) (*time.Time, error)
-	ExpireUsers(ctx context.Context, now time.Time) (int64, error)
 	AccessLogsSummary(ctx context.Context, since time.Time, onlineWindow time.Duration) (*AccessLogsSummary, error)
 }

@@ -55,7 +55,6 @@ func setupUserWithContainer(t *testing.T, st store.Store, username, secret strin
 		Username:     username,
 		PasswordHash: hash,
 		Role:         model.RoleUser,
-		Status:       model.StatusActive,
 	}
 	if err := st.CreateUser(context.Background(), user); err != nil {
 		t.Fatal(err)
@@ -170,7 +169,7 @@ func TestProxyRoutesToExtraPort(t *testing.T) {
 	extraPort := portOf(extraUp.URL)
 
 	hash, _ := auth.HashPassword("pass12345")
-	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser, Status: model.StatusActive}
+	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser}
 	st.CreateUser(context.Background(), user)
 
 	tplID := "tpl1"
@@ -265,7 +264,7 @@ func TestProxyNoContainer(t *testing.T) {
 func TestProxyDisabledUser(t *testing.T) {
 	p, st, tm := newTestProxy(t)
 	hash, _ := auth.HashPassword("pass12345")
-	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser, Status: model.StatusDisabled}
+	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser, ManualDisabled: true}
 	st.CreateUser(context.Background(), user)
 	req := authedRequest(t, tm, user, "/")
 	rec := httptest.NewRecorder()
@@ -278,7 +277,7 @@ func TestProxyDisabledUser(t *testing.T) {
 func TestProxyDeletedUserRedirectsToLogout(t *testing.T) {
 	p, st, tm := newTestProxy(t)
 	hash, _ := auth.HashPassword("pass12345")
-	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser, Status: model.StatusActive}
+	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser}
 	st.CreateUser(context.Background(), user)
 	req := authedRequest(t, tm, user, "/")
 	// user deleted from the store while their JWT is still valid
@@ -296,7 +295,7 @@ func TestProxyDeletedUserRedirectsToLogout(t *testing.T) {
 func addUserOnly(t *testing.T, st store.Store, username string) *model.User {
 	t.Helper()
 	hash, _ := auth.HashPassword("pass12345")
-	user := &model.User{ID: model.NewID(), Username: username, PasswordHash: hash, Role: model.RoleUser, Status: model.StatusActive}
+	user := &model.User{ID: model.NewID(), Username: username, PasswordHash: hash, Role: model.RoleUser}
 	if err := st.CreateUser(context.Background(), user); err != nil {
 		t.Fatal(err)
 	}
