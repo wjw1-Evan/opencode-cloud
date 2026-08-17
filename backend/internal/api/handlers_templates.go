@@ -56,6 +56,18 @@ var systemTemplates = []model.Template{
 		Command:      []string{"code-server", "--bind-addr", "0.0.0.0:8080", "--auth", "none"},
 		IsSystem:     true,
 	},
+	{
+		Name:         "jupyter",
+		Image:        "jupyter/base-notebook:latest",
+		InternalPort: 8888,
+		Envs: map[string]string{
+			"NOTEBOOK_ARGS": "--ServerApp.token= --ServerApp.password=",
+		},
+		CPULimit:     0.5,
+		MemLimit:     1 << 30,
+		WorkspaceDir: "/home/jovyan",
+		IsSystem:     true,
+	},
 }
 
 // EnsureSystemTemplates seeds the built-in templates if missing. Images are

@@ -1,6 +1,6 @@
 # DevCapsule（开发胶囊舱）
 
-基于 Docker 的编程开发环境容器管理平台：管理员批量生成账号、批量创建容器，用户登录后直接在浏览器中使用自己专属容器里的工具进行开发。平台内置 `opencode` 与 `vscode` 两个系统模板开箱即用，同时管理员可以自由创建模板选择**任意提供 Web 界面的 Docker 镜像**（如 opencode、Dify、VS Code、JupyterLab…），自由配置端口、环境变量、启动命令与资源限额。每个用户对应一个独立容器，一一映射、互相隔离、代码持久化。
+基于 Docker 的编程开发环境容器管理平台：管理员批量生成账号、批量创建容器，用户登录后直接在浏览器中使用自己专属容器里的工具进行开发。平台内置 `opencode`、`vscode` 与 `jupyter` 三个系统模板开箱即用，同时管理员可以自由创建模板选择**任意提供 Web 界面的 Docker 镜像**（如 opencode、Dify、VS Code、JupyterLab…），自由配置端口、环境变量、启动命令与资源限额。每个用户对应一个独立容器，一一映射、互相隔离、代码持久化。
 
 > 一句话：**管理员建一个分组 → 批量发账号 → 用户打开网页即可写代码 / 搭 AI 应用**。
 
@@ -83,7 +83,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 1. 打开 `http://<服务器>/`，用管理员账号登录
 2. **用户与容器** → 填课程（如「Python 基础」）、数量、选模板 → 点「生成账号并建容器」，浏览器自动下载 `accounts.csv`
-3. **镜像模板** → 系统内置 opencode / vscode 模板可直接用；也可创建自定义模板，填入任意工具镜像与端口
+3. **镜像模板** → 系统内置 opencode / vscode / jupyter 模板可直接用；也可创建自定义模板，填入任意工具镜像与端口
 
 用户拿到账号后访问门户登录，随后访问站点根路径 `/` 即自动进入自己专属的工具界面。
 
@@ -95,7 +95,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 | 步骤 | 操作 | 说明 |
 |---|---|---|
-| 1 | 建模板 | 填入任意工具镜像、主端口与附加端口、环境变量、启动命令、资源限额（系统内置 opencode / vscode 模板） |
+| 1 | 建模板 | 填入任意工具镜像、主端口与附加端口、环境变量、启动命令、资源限额（系统内置 opencode / vscode / jupyter 模板） |
 | 2 | 批量建号 | 输入课程、数量或显式用户名列表；用户名前缀由课程名自动推导（字母数字小写，如 `Python 基础`→`python001`，`2026 春季班`→`s2026001`），密码随机 12 位（默认），argon2 哈希入库，明文 `accounts.csv` 自动下载 |
 | 3 | 批量建容器 | 「生成账号并建容器」自动完成，或选中用户 + 模板手动执行；后台并发：预拉镜像 → create（限额/网络/env/卷）→ start → 健康检查；已有容器自动跳过，可强制重建 |
 | 4 | 日常管理 | 列表按课程筛选 → 勾选用户 → 批量重建（`containers/batch`，强制重建走 `force`）/重启/停止/删除（`users/batch/action`）；单容器启动走 `containers/{id}/start`；修改密码由用户自助完成，管理员可在列表查看当前密码 |
@@ -257,14 +257,14 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 
 ## 应用模板与用户容器
 
-平台内置两个**系统模板**（不可删除），其余工具通过模板机制自由接入——模板与具体工具**解耦**，任意提供 HTTP 端口的 Web 应用都可以下发为每个用户的专属容器。**opencode 是深度集成的参考模板**（基础路径路由 + 双层认证 + SSE/WS 透传），Dify、VS Code、JupyterLab 等任意 Docker 镜像均可接入。
+平台内置三个**系统模板**（不可删除），其余工具通过模板机制自由接入——模板与具体工具**解耦**，任意提供 HTTP 端口的 Web 应用都可以下发为每个用户的专属容器。**opencode 是深度集成的参考模板**（基础路径路由 + 双层认证 + SSE/WS 透传），Dify、VS Code、JupyterLab 等任意 Docker 镜像均可接入。
 
 | 工具 | 镜像 | 端口 | 启动命令 | 说明 |
 |---|---|---|---|---|
 | **opencode**（系统模板） | `ghcr.io/anomalyco/opencode:latest` | 4096 | `serve --mdns` | AI 辅助编程 IDE，Basic Auth 双层认证 |
 | **VS Code**（系统模板） | `codercom/code-server:latest` | 8080 | `code-server --bind-addr 0.0.0.0:8080 --auth none` | 浏览器版 VS Code，经典编程教学环境 |
+| **JupyterLab**（系统模板） | `jupyter/base-notebook:latest` | 8888 | —（`NOTEBOOK_ARGS` 关闭 token/password） | 数据科学 / Python 教学笔记本 |
 | **Dify** | `langgenius/dify` | 3000 | — | LLM 应用搭建平台（LLMOps），用户可视化编排 AI 应用 |
-| **JupyterLab** | `jupyter/base-notebook` | 8888 | — | 数据科学 / Python 教学笔记本 |
 
 > 上表仅为示例，管理员可填入任意镜像，不限于这些。模板按课程/分组选用：同一课程/分组的用户使用同一模板；不同课程可用不同模板，互不影响。
 
