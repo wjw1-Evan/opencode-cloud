@@ -4,14 +4,14 @@ set -e
 # Initialize PostgreSQL data directory if empty
 if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
     echo "Initializing PostgreSQL database..."
-    su-exec postgres /usr/lib/postgresql/17/bin/initdb \
+    su-exec postgres /usr/libexec/postgresql16/initdb \
         -D /var/lib/postgresql/data \
         --encoding=UTF-8 \
         --lc-collate=C \
         --lc-ctype=C
 
     # Start PostgreSQL temporarily to create user and database
-    su-exec postgres /usr/lib/postgresql/17/bin/pg_ctl \
+    su-exec postgres /usr/libexec/postgresql16/pg_ctl \
         -D /var/lib/postgresql/data \
         -w start
 
@@ -21,7 +21,7 @@ if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
     su-exec postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};"
 
     # Stop PostgreSQL
-    su-exec postgres /usr/lib/postgresql/17/bin/pg_ctl \
+    su-exec postgres /usr/libexec/postgresql16/pg_ctl \
         -D /var/lib/postgresql/data \
         -m fast \
         -w stop

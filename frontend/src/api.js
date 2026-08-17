@@ -5,7 +5,7 @@ async function request(method, path, body) {
     opts.body = JSON.stringify(body)
   }
   const resp = await fetch(path, opts)
-  if (resp.status === 401 && !path.includes('/auth/login')) {
+  if (resp.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/initialized')) {
     window.location.href = '/'
     throw new Error('unauthorized')
   }
@@ -19,6 +19,8 @@ async function request(method, path, body) {
 }
 
 export const api = {
+  initialized: () => request('GET', '/platform/auth/initialized'),
+  initialize: (username, password) => request('POST', '/platform/auth/initialize', { username, password }),
   login: (username, password) => request('POST', '/platform/auth/login', { username, password }),
   me: () => request('GET', '/platform/auth/me'),
   changePassword: (oldPassword, newPassword) => request('POST', '/platform/auth/change-password', { old_password: oldPassword, new_password: newPassword }),
@@ -34,6 +36,20 @@ export const api = {
   containerAction: (id, action) => request('POST', `/platform/admin/containers/${id}/${action}`),
   containerStats: (id) => request('GET', `/platform/admin/containers/${id}/stats`),
   allStats: () => request('GET', '/platform/admin/containers/stats/all'),
+  // images
+  listImages: () => request('GET', '/platform/admin/images'),
+  getImage: (id) => request('GET', `/platform/admin/images/${id}`),
+  deleteImage: (id) => request('DELETE', `/platform/admin/images/${id}`),
+  pullImage: (image) => request('POST', '/platform/admin/images/pull', { image }),
+  uploadImage: async (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    const resp = await fetch('/platform/admin/images/import', { method: 'POST', body: form })
+    if (resp.status === 401) { window.location.href = '/'; throw new Error('unauthorized') }
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) { const err = new Error(data.error || resp.statusText); err.status = resp.status; throw err }
+    return data.data
+  },
   // templates
   listTemplates: () => request('GET', '/platform/admin/templates'),
   createTemplate: (payload) => request('POST', '/platform/admin/templates', payload),

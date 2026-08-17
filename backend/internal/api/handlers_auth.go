@@ -181,6 +181,77 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeData(w, map[string]any{"user": u})
 }
 
+// handleInitialized returns whether the system has been set up (admin account exists).
+func (s *Server) handleInitialized(w http.ResponseWriter, r *http.Request) {
+	users, err := s.st.ListUsers(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	initialized := false
+	for _, u := range users {
+		if u.Role == model.RoleAdmin {
+			initialized = true
+			break
+		}
+	}
+	writeData(w, map[string]any{"initialized": initialized})
+}
+
+type initializeRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// handleInitialize creates the initial admin account. Only works once.
+func (s *Server) handleInitialize(w http.ResponseWriter, r *http.Request) {
+	users, err := s.st.ListUsers(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	for _, u := range users {
+		if u.Role == model.RoleAdmin {
+			writeError(w, http.StatusConflict, "system already initialized")
+			return
+		}
+	}
+	var req initializeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Username == "" {
+		writeError(w, http.StatusBadRequest, "username is required")
+		return
+	}
+	if len(req.Password) < 8 {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "hash password")
+		return
+	}
+	now := time.Now().UTC()
+	if err := s.st.CreateUser(r.Context(), &model.User{
+		ID:            model.NewID(),
+		Username:      req.Username,
+		PasswordHash:  hash,
+		PasswordPlain: req.Password,
+		Role:          model.RoleAdmin,
+		Status:        model.StatusActive,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "create admin failed")
+		return
+	}
+	writeData(w, map[string]any{"initialized": true})
+}
+
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")

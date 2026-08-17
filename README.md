@@ -302,7 +302,7 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
 
 | 工具 | 镜像 | 端口 | 启动命令 | 说明 |
 |---|---|---|---|---|
-| **opencode**（系统模板） | `ghcr.io/anomalyco/opencode:latest` | 4096 | `opencode serve --mdns` | AI 辅助编程 IDE，Basic Auth 双层认证 |
+| **opencode**（系统模板） | `ghcr.io/anomalyco/opencode:latest` | 4096 | `serve --mdns` | AI 辅助编程 IDE，Basic Auth 双层认证 |
 | **VS Code**（系统模板） | `codercom/code-server:latest` | 8080 | `code-server --bind-addr 0.0.0.0:8080 --auth none` | 浏览器版 VS Code，经典编程教学环境 |
 | **JupyterLab**（系统模板） | `jupyter/base-notebook:latest` | 8888 | —（`NOTEBOOK_ARGS` 关闭 token/password） | 数据科学 / Python 教学笔记本 |
 | **Dify** | `jsonbored/dify-aio` | 8080 | — | LLM 应用搭建平台（全合一版本），用户可视化编排 AI 应用 |

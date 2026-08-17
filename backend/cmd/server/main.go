@@ -41,9 +41,6 @@ func main() {
 	if err != nil {
 		logger.Fatalf("build server: %v", err)
 	}
-	if err := srv.EnsureAdmin(ctx); err != nil {
-		logger.Fatalf("bootstrap admin: %v", err)
-	}
 	if err := srv.EnsureSystemTemplates(ctx); err != nil {
 		logger.Fatalf("bootstrap system templates: %v", err)
 	}

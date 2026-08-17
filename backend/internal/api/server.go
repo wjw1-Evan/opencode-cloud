@@ -77,6 +77,8 @@ func (s *Server) EnsureAdmin(ctx context.Context) error {
 func (s *Server) Router() http.Handler {
 	apiMux := http.NewServeMux()
 
+	apiMux.HandleFunc("GET /auth/initialized", s.handleInitialized)
+	apiMux.HandleFunc("POST /auth/initialize", s.handleInitialize)
 	apiMux.HandleFunc("POST /auth/login", s.handleLogin)
 	apiMux.HandleFunc("POST /auth/refresh", s.handleRefresh)
 	apiMux.HandleFunc("GET /auth/logout", s.handleLogout)
@@ -105,6 +107,13 @@ func (s *Server) Router() http.Handler {
 	apiMux.HandleFunc("PUT /admin/templates/{id}", s.JWTAuth(s.AdminOnly(s.handleUpdateTemplate)))
 	apiMux.HandleFunc("DELETE /admin/templates/{id}", s.JWTAuth(s.AdminOnly(s.handleDeleteTemplate)))
 
+	// images
+	apiMux.HandleFunc("GET /admin/images", s.JWTAuth(s.AdminOnly(s.handleListImages)))
+	apiMux.HandleFunc("POST /admin/images/import", s.JWTAuth(s.AdminOnly(s.handleImportImage)))
+	apiMux.HandleFunc("GET /admin/images/{id}", s.JWTAuth(s.AdminOnly(s.handleGetImage)))
+	apiMux.HandleFunc("DELETE /admin/images/{id}", s.JWTAuth(s.AdminOnly(s.handleDeleteImage)))
+	apiMux.HandleFunc("POST /admin/images/pull", s.JWTAuth(s.AdminOnly(s.handlePullImage)))
+
 	// stats
 	apiMux.HandleFunc("GET /admin/stats/dashboard", s.JWTAuth(s.AdminOnly(s.handleDashboard)))
 
@@ -122,6 +131,8 @@ func (s *Server) Router() http.Handler {
 	root.Handle("/dc-static/", http.StripPrefix("/dc-static", s.staticHandler()))
 	root.Handle("/portal", s.staticHandler())
 	root.Handle("/portal/", s.staticHandler())
+	root.Handle("/initialize", s.staticHandler())
+	root.Handle("/initialize/", s.staticHandler())
 	root.Handle("/admin", s.staticHandler())
 	root.Handle("/admin/", s.staticHandler())
 	root.Handle("/api/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

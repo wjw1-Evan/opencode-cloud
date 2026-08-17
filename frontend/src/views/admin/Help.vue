@@ -29,7 +29,7 @@
       <ul>
         <li>系统内置 <b>opencode</b>（端口 4096）、<b>vscode</b>（code-server，端口 8080）与 <b>jupyter</b>（JupyterLab，端口 8888）模板，可直接选用；也可自行创建模板，填写任意提供 Web 界面的 Docker 镜像（如 Dify、JupyterLab…）。</li>
         <li>用户登录后访问站点根路径即进入自己的工具；<b>附加端口</b>通过 <code>/port/{端口}/</code> 访问。</li>
-        <li>示例：opencode 使用启动命令 <code>opencode serve --mdns</code>（主端口 4096）。</li>
+        <li>示例：opencode 使用启动命令 <code>serve --mdns</code>（主端口 4096）。</li>
         <li>同一课程的用户使用同一模板；不同课程可使用不同模板，互不影响。</li>
       </ul>
     </div>

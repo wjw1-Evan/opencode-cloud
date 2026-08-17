@@ -8,21 +8,25 @@
       <div class="brand">
         <div class="logo">◈</div>
         <h1>DevCapsule <span class="zh">开发胶囊舱</span></h1>
-        <p class="sub">一人一舱，浏览器即开即用</p>
+        <p class="sub">首次部署，请设置管理员账户</p>
       </div>
 
       <form @submit.prevent="submit">
         <div style="margin-bottom: 14px">
-          <label>用户名</label>
-          <input v-model="username" autocomplete="username" required placeholder="请输入用户名" />
+          <label>管理员用户名</label>
+          <input v-model="username" autocomplete="username" required placeholder="请设置管理员用户名" />
+        </div>
+        <div style="margin-bottom: 14px">
+          <label>管理员密码</label>
+          <input v-model="password" type="password" autocomplete="new-password" required placeholder="至少 8 位" minlength="8" />
         </div>
         <div style="margin-bottom: 20px">
-          <label>密码</label>
-          <input v-model="password" type="password" autocomplete="current-password" required placeholder="请输入密码" />
+          <label>确认密码</label>
+          <input v-model="confirmPassword" type="password" autocomplete="new-password" required placeholder="再次输入密码" minlength="8" />
         </div>
         <button class="btn btn-primary submit" type="submit" :disabled="loading">
           <span class="scan" v-if="loading"></span>
-          {{ loading ? '正在接入…' : '进入平台' }}
+          {{ loading ? '正在初始化…' : '完成设置' }}
         </button>
         <p v-if="error" class="err">{{ error }}</p>
       </form>
@@ -31,35 +35,27 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 
 const username = ref('')
 const password = ref('')
+const confirmPassword = ref('')
 const loading = ref(false)
 const error = ref('')
 const router = useRouter()
 
-onMounted(async () => {
-  try {
-    const data = await api.initialized()
-    if (!data.initialized) {
-      router.push('/initialize')
-    }
-  } catch {}
-})
-
 async function submit() {
+  if (password.value !== confirmPassword.value) {
+    error.value = '两次输入的密码不一致'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
-    const data = await api.login(username.value, password.value)
-    if (data.user && data.user.role === 'admin') {
-      router.push('/admin/dashboard')
-    } else {
-      router.push('/portal')
-    }
+    await api.initialize(username.value, password.value)
+    router.push('/')
   } catch (e) {
     error.value = e.message
   } finally {

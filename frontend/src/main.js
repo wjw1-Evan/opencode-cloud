@@ -8,6 +8,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: () => import('./views/Login.vue') },
+    { path: '/initialize', component: () => import('./views/Initialize.vue') },
     { path: '/portal', component: () => import('./views/Portal.vue') },
     {
       path: '/admin',
@@ -17,6 +18,7 @@ const router = createRouter({
         { path: 'dashboard', component: () => import('./views/admin/Dashboard.vue') },
         { path: 'users', component: () => import('./views/admin/Users.vue') },
         { path: 'templates', component: () => import('./views/admin/Templates.vue') },
+        { path: 'images', component: () => import('./views/admin/Images.vue') },
         { path: 'help', component: () => import('./views/admin/Help.vue') },
       ],
     },
@@ -24,7 +26,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (to.path === '/') return true
+  if (to.path === '/' || to.path === '/initialize') return true
   try {
     await api.me()
     return true

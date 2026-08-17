@@ -11,8 +11,8 @@ FROM alpine:3.20
 
 # Install dependencies
 RUN apk add --no-cache \
-    postgresql17 \
-    postgresql17-client \
+    postgresql16 \
+    postgresql16-client \
     nginx \
     supervisor \
     ca-certificates \
@@ -20,14 +20,11 @@ RUN apk add --no-cache \
     bash
 
 # Create directories
-RUN mkdir -p /var/lib/postgresql/data /var/run/postgresql /var/log/supervisor
-
-# Create postgres user and set ownership
-RUN adduser -D -u 70 -h /var/lib/postgresql postgres && \
+RUN mkdir -p /var/lib/postgresql/data /var/run/postgresql /var/log/supervisor && \
     chown -R postgres:postgres /var/lib/postgresql /var/run/postgresql
 
 # Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/http.d/default.conf
 
 # Copy supervisor config
 COPY supervisord.conf /etc/supervisord.conf

@@ -9,9 +9,17 @@
         <RouterLink to="/admin/dashboard"><span class="dot"></span>总览</RouterLink>
         <RouterLink to="/admin/users"><span class="dot"></span>用户与容器</RouterLink>
         <RouterLink to="/admin/templates"><span class="dot"></span>镜像模板</RouterLink>
+        <RouterLink to="/admin/images"><span class="dot"></span>镜像管理</RouterLink>
         <RouterLink to="/admin/help"><span class="dot"></span>使用帮助</RouterLink>
       </nav>
       <div class="side-foot">
+        <form v-if="showPwd" class="pwd-form" @submit.prevent="changePwd">
+          <input v-model="oldPwd" type="password" placeholder="当前密码" required />
+          <input v-model="newPwd" type="password" placeholder="新密码（至少 8 位）" required minlength="8" />
+          <input v-model="confirmPwd" type="password" placeholder="确认新密码" required />
+          <button class="btn btn-primary" type="submit" :disabled="pwdBusy">{{ pwdBusy ? '提交中…' : '确认修改' }}</button>
+        </form>
+        <button v-else class="btn pwd-btn" @click="showPwd = true">修改密码</button>
         <button class="btn logout" @click="logout">退出登录</button>
       </div>
     </aside>
@@ -22,6 +30,33 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
+import { api } from '../../api'
+
+const showPwd = ref(false)
+const oldPwd = ref('')
+const newPwd = ref('')
+const confirmPwd = ref('')
+const pwdBusy = ref(false)
+
+async function changePwd() {
+  if (newPwd.value !== confirmPwd.value) {
+    alert('两次输入的新密码不一致')
+    return
+  }
+  pwdBusy.value = true
+  try {
+    await api.changePassword(oldPwd.value, newPwd.value)
+    alert('密码修改成功')
+    showPwd.value = false
+    oldPwd.value = newPwd.value = confirmPwd.value = ''
+  } catch (e) {
+    alert(e.message)
+  } finally {
+    pwdBusy.value = false
+  }
+}
+
 function logout() {
   window.location.href = '/platform/auth/logout'
 }
@@ -98,7 +133,26 @@ nav a.router-link-active .dot {
   background: var(--cyan);
   box-shadow: 0 0 10px var(--cyan);
 }
-.side-foot { padding: 8px; }
+.side-foot { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.pwd-btn {
+  width: 100%;
+  color: var(--text-2);
+  border-color: var(--glass-border);
+  background: transparent;
+}
+.pwd-btn:hover { color: var(--cyan); border-color: rgba(34, 211, 238, 0.4); }
+.pwd-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.pwd-form input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-0);
+  font-size: 13px;
+}
+.pwd-form input::placeholder { color: var(--text-2); }
+.pwd-form .btn { padding: 8px; font-size: 13px; }
 .logout {
   width: 100%;
   color: var(--text-2);

@@ -68,7 +68,12 @@ func (o *Orchestrator) Provision(ctx context.Context, user *model.User, tpl *mod
 			// remove stale docker container so we can recreate with same name
 			o.dc.RemoveContainer(ctx, existing.ContainerID)
 		}
-	} else if err != store.ErrNotFound {
+	} else if err == store.ErrNotFound {
+		// No DB record — check if an orphaned Docker container with this name exists.
+		if status, inspErr := o.dc.InspectStatus(ctx, name); inspErr == nil && status != "" {
+			o.dc.RemoveContainer(ctx, name)
+		}
+	} else {
 		return nil, err
 	}
 
