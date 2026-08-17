@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Defaults for credentials are applied at runtime (not baked into the image).
+export POSTGRES_USER="${POSTGRES_USER:-devcapsule}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-devcapsule}"
+export POSTGRES_DB="${POSTGRES_DB:-devcapsule}"
+export DATABASE_URL="${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable}"
+
 # Initialize PostgreSQL data directory if empty
 if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
     echo "Initializing PostgreSQL database..."

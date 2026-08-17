@@ -45,12 +45,8 @@ COPY --from=build /out/devcapsule /usr/local/bin/devcapsule
 COPY backend/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Environment variables with defaults
-ENV POSTGRES_USER=devcapsule \
-    POSTGRES_PASSWORD=devcapsule \
-    POSTGRES_DB=devcapsule \
-    DATABASE_URL=postgres://devcapsule:devcapsule@localhost:5432/devcapsule?sslmode=disable \
-    ADDR=":8080" \
+# Environment variables with defaults (credentials are set at runtime in entrypoint.sh)
+ENV ADDR=":8080" \
     NETWORK_NAME=devcapsule_user-net
 
 EXPOSE 80
