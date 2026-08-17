@@ -112,13 +112,14 @@ func (s *Server) Router() http.Handler {
 	//   /platform/ -> platform REST API (unique prefix, never collides with
 	//                 container root-relative APIs like /api/...)
 	//   /api/health -> ops health check (no student context)
-	//   /static/    -> platform assets (vite base)
+	//   /dc-static/ -> platform assets (vite base; unique so tool assets
+	//                 served under /static or /assets are proxied untouched)
 	//   /portal, /admin -> platform SPA pages (always platform UI)
 	//   everything else -> logged-in student => proxy to their container,
 	//                 anonymous / admin => platform SPA
 	root := http.NewServeMux()
 	root.Handle("/platform/", http.StripPrefix("/platform", apiMux))
-	root.Handle("/static/", http.StripPrefix("/static", s.staticHandler()))
+	root.Handle("/dc-static/", http.StripPrefix("/dc-static", s.staticHandler()))
 	root.Handle("/portal", s.staticHandler())
 	root.Handle("/portal/", s.staticHandler())
 	root.Handle("/admin", s.staticHandler())

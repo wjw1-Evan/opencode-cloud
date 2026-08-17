@@ -72,7 +72,7 @@ export DATABASE_URL="postgres://opencode:opencode@localhost:5432/opencode?sslmod
 export JWT_SECRET="dev-secret" ADMIN_PASSWORD="admin123" NETWORK_NAME="devcapsule_user-net"
 cd backend && go run ./cmd/server
 
-# 3. 前端（Vite dev server，仅代理 /api 与 /static；/platform 接口需自行在
+# 3. 前端（Vite dev server，仅代理 /api 与 /dc-static；/platform 接口需自行在
 #    vite.config.js 补充代理，或直接访问 :8080 上 embed 的完整平台页面）
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
@@ -223,7 +223,7 @@ pg_dump "$DATABASE_URL" > opencode-backup-$(date +%F).sql
                      └────────────────────────────────────────────┘
 ```
 
-**路由约定**：平台基于**根路径 + JWT 身份识别**路由，不依赖任何路径前缀。用户登录后访问站点根路径 `/`，代理解析其登录态（`Authorization: Bearer` 或 `access_token` cookie）确定所属容器，原样转发到 `user-{username}:{主端口}`——工具无需感知前缀，资源/API 路径天然兼容。未登录与管理员访问根路径获得平台 SPA（`/portal`、`/admin`、`/static/*` 恒为平台页面）。
+**路由约定**：平台基于**根路径 + JWT 身份识别**路由，不依赖任何路径前缀。用户登录后访问站点根路径 `/`，代理解析其登录态（`Authorization: Bearer` 或 `access_token` cookie）确定所属容器，原样转发到 `user-{username}:{主端口}`——工具无需感知前缀，资源/API 路径天然兼容。未登录与管理员访问根路径获得平台 SPA（`/portal`、`/admin`、`/dc-static/*` 恒为平台页面；工具自身的 `/static`、`/assets` 等资源路径原样透传给容器，不会与平台资源冲突）。
 
 **附加端口**：开发调试中可能需要同时访问多个服务端口（如开发工具一个端口、运行中的应用另一个端口）。模板可配置**一个主端口 + 多个附加端口**，附加端口走 `/port/{port}/`（如 `/port/3000/`），代理校验端口在模板白名单内后带双层认证转发到对应端口，所有端口共用同一容器、同一隔离与持久化。
 
@@ -332,7 +332,7 @@ access_logs      id(bigserial), user_id, path, status, bytes, latency_ms, ts
 | 容器 | `POST /platform/admin/containers/batch`（按 `template_id` + `user_ids`，`force` 可重建）、`GET /platform/admin/containers`（实时状态调和）、`POST /platform/admin/containers/{id}/start\|stop\|restart\|remove`、`GET /platform/admin/containers/{id}/stats`、`GET /platform/admin/containers/stats/all`（各容器实时 Docker stats） |
 | 模板 | `GET/POST /platform/admin/templates`、`GET/PUT/DELETE /platform/admin/templates/{id}`（`internal_port` 主端口 + `extra_ports[]` 附加端口；系统模板不可删） |
 | 统计 | `GET /platform/admin/stats/dashboard`（用户/容器状态分布、在线用户（5 分钟内）、24h 请求趋势、CPU/内存实时聚合、课程分布、模板数、空闲超时配置） |
-| 代理 | `/*` 根路径（JWT 身份识别 + ReverseProxy，学生请求转发到其容器，支持 `/port/{port}/` 附加端口）；`/portal`、`/admin`、`/static/*` 恒为平台 SPA |
+| 代理 | `/*` 根路径（JWT 身份识别 + ReverseProxy，学生请求转发到其容器，支持 `/port/{port}/` 附加端口）；`/portal`、`/admin`、`/dc-static/*` 恒为平台 SPA |
 | 健康检查 | `GET /api/health` |
 
 ## 项目结构
