@@ -13,19 +13,29 @@
         <RouterLink to="/admin/help"><span class="dot"></span>使用帮助</RouterLink>
       </nav>
       <div class="side-foot">
-        <form v-if="showPwd" class="pwd-form" @submit.prevent="changePwd">
-          <input v-model="oldPwd" type="password" placeholder="当前密码" required />
-          <input v-model="newPwd" type="password" placeholder="新密码（至少 8 位）" required minlength="8" />
-          <input v-model="confirmPwd" type="password" placeholder="确认新密码" required />
-          <button class="btn btn-primary" type="submit" :disabled="pwdBusy">{{ pwdBusy ? '提交中…' : '确认修改' }}</button>
-        </form>
-        <button v-else class="btn pwd-btn" @click="showPwd = true">修改密码</button>
+        <button class="btn pwd-btn" @click="showPwd = true">修改密码</button>
         <button class="btn logout" @click="logout">退出登录</button>
       </div>
     </aside>
     <main class="main">
       <router-view />
     </main>
+
+    <div v-if="showPwd" class="modal-mask" @click.self="showPwd = false">
+      <div class="modal">
+        <h3>修改密码</h3>
+        <div class="pwd-fields">
+          <input v-model="oldPwd" type="password" placeholder="当前密码" required />
+          <input v-model="newPwd" type="password" placeholder="新密码（至少 8 位）" required minlength="8" />
+          <input v-model="confirmPwd" type="password" placeholder="确认新密码" required />
+          <p v-if="pwdError" class="pwd-error">{{ pwdError }}</p>
+        </div>
+        <div class="btns">
+          <button class="btn btn-primary" @click="changePwd" :disabled="pwdBusy">{{ pwdBusy ? '提交中…' : '确认修改' }}</button>
+          <button class="btn" @click="showPwd = false" :disabled="pwdBusy">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -38,20 +48,21 @@ const oldPwd = ref('')
 const newPwd = ref('')
 const confirmPwd = ref('')
 const pwdBusy = ref(false)
+const pwdError = ref('')
 
 async function changePwd() {
+  pwdError.value = ''
   if (newPwd.value !== confirmPwd.value) {
-    alert('两次输入的新密码不一致')
+    pwdError.value = '两次输入的新密码不一致'
     return
   }
   pwdBusy.value = true
   try {
     await api.changePassword(oldPwd.value, newPwd.value)
-    alert('密码修改成功')
     showPwd.value = false
     oldPwd.value = newPwd.value = confirmPwd.value = ''
   } catch (e) {
-    alert(e.message)
+    pwdError.value = e.message
   } finally {
     pwdBusy.value = false
   }
@@ -141,18 +152,44 @@ nav a.router-link-active .dot {
   background: transparent;
 }
 .pwd-btn:hover { color: var(--cyan); border-color: rgba(34, 211, 238, 0.4); }
-.pwd-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
-.pwd-form input {
-  width: 100%;
-  padding: 8px 10px;
+.modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(2, 4, 10, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: rgba(14, 20, 38, 0.92);
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  width: 420px; max-width: 92vw;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: pop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes pop {
+  from { transform: scale(0.96) translateY(10px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+.modal h3 { margin: 0 0 16px; font-size: 15px; letter-spacing: 0.03em; }
+.pwd-fields { display: flex; flex-direction: column; gap: 10px; }
+.pwd-fields input {
+  padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--glass-border);
   background: rgba(0, 0, 0, 0.3);
   color: var(--text-0);
   font-size: 13px;
 }
-.pwd-form input::placeholder { color: var(--text-2); }
-.pwd-form .btn { padding: 8px; font-size: 13px; }
+.pwd-fields input::placeholder { color: var(--text-2); }
+.pwd-error { color: var(--err); font-size: 12px; margin: 0; }
+.btns { margin-top: 16px; display: flex; gap: 8px; }
 .logout {
   width: 100%;
   color: var(--text-2);

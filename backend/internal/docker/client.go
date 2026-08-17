@@ -2,9 +2,11 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -17,8 +19,10 @@ import (
 )
 
 type Client struct {
-	cli    *client.Client
-	secret *SecretGen
+	cli       *client.Client
+	secret    *SecretGen
+	statsPrev map[string]*rawStats
+	statsMu   sync.Mutex
 }
 
 func NewClient() (*Client, error) {
@@ -29,7 +33,7 @@ func NewClient() (*Client, error) {
 	if _, err := cli.Ping(context.Background()); err != nil {
 		return nil, fmt.Errorf("docker unavailable: %w", err)
 	}
-	return &Client{cli: cli, secret: &SecretGen{}}, nil
+	return &Client{cli: cli, secret: &SecretGen{}, statsPrev: make(map[string]*rawStats)}, nil
 }
 
 func (c *Client) Close() error { return c.cli.Close() }
@@ -275,6 +279,8 @@ func (c *Client) ListManaged(ctx context.Context) ([]types.Container, error) {
 }
 
 // Stats returns per-container CPU and memory usage.
+// It caches previous stats per container to compute accurate CPU deltas,
+// since ContainerStatsOneShot may return zero precpu_stats on first call.
 func (c *Client) Stats(ctx context.Context, id string) (*ContainerStats, error) {
 	info, err := c.cli.ContainerInspect(ctx, id)
 	if err != nil {
@@ -289,9 +295,29 @@ func (c *Client) Stats(ctx context.Context, id string) (*ContainerStats, error) 
 	if err != nil {
 		return nil, err
 	}
-	parsed := parseStatsJSON(body)
-	parsed.MemLimit = info.HostConfig.Memory
-	return parsed, nil
+	var raw rawStats
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, err
+	}
+	cs := &ContainerStats{Time: time.Now(), MemBytes: float64(raw.MemoryStats.Usage), MemLimit: info.HostConfig.Memory}
+
+	c.statsMu.Lock()
+	prev, hasPrev := c.statsPrev[id]
+	c.statsPrev[id] = &raw
+	c.statsMu.Unlock()
+
+	if hasPrev {
+		cpuDelta := float64(raw.CPUStats.CPUUsage.TotalUsage - prev.CPUStats.CPUUsage.TotalUsage)
+		sysDelta := float64(raw.CPUStats.SystemUsage - prev.CPUStats.SystemUsage)
+		ncpu := raw.CPUStats.OnlineCPUs
+		if ncpu == 0 {
+			ncpu = 1
+		}
+		if sysDelta > 0 {
+			cs.CPUCores = cpuDelta / sysDelta * float64(ncpu)
+		}
+	}
+	return cs, nil
 }
 
 type SecretGen struct{}

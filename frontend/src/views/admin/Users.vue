@@ -1,8 +1,14 @@
 <template>
   <div>
     <div class="page-head">
-      <h2>用户与容器</h2>
-      <span class="meta">用户与容器一一对应</span>
+      <div class="head-left">
+        <h2>用户与容器</h2>
+        <span class="meta">用户与容器一一对应</span>
+      </div>
+      <div class="head-right">
+        <span class="updated" v-if="updatedAt">更新于 {{ updatedAt }}</span>
+        <button class="btn" @click="refresh" :disabled="loading">{{ loading ? '刷新中…' : '刷新' }}</button>
+      </div>
     </div>
 
     <div class="card batch">
@@ -31,10 +37,10 @@
         <span class="sel-info">已选 {{ selected.size }} 个用户</span>
         <div class="toolbar-btns">
           <button class="btn" :disabled="!selected.size || busyProvision" @click="bulkProvision">{{ busyProvision ? '重建中…' : '重建' }}</button>
-          <button class="btn" :disabled="!selected.size || busyAction" @click="bulkAction('start')">{{ busyAction === 'start' ? '启动中…' : '启动' }}</button>
-          <button class="btn" :disabled="!selected.size || busyAction" @click="bulkAction('restart')">{{ busyAction === 'restart' ? '重启中…' : '重启' }}</button>
-          <button class="btn" :disabled="!selected.size || busyAction" @click="bulkAction('stop')">{{ busyAction === 'stop' ? '停止中…' : '停止' }}</button>
-          <button class="btn btn-danger" :disabled="!selected.size || busyAction" @click="bulkAction('delete')">{{ busyAction === 'delete' ? '删除中…' : '删除' }}</button>
+          <button class="btn" :disabled="!selected.size || !!busyAction" @click="bulkAction('start')">{{ busyAction === 'start' ? '启动中…' : '启动' }}</button>
+          <button class="btn" :disabled="!selected.size || !!busyAction" @click="bulkAction('restart')">{{ busyAction === 'restart' ? '重启中…' : '重启' }}</button>
+          <button class="btn" :disabled="!selected.size || !!busyAction" @click="bulkAction('stop')">{{ busyAction === 'stop' ? '停止中…' : '停止' }}</button>
+          <button class="btn btn-danger" :disabled="!selected.size || !!busyAction" @click="bulkAction('delete')">{{ busyAction === 'delete' ? '删除中…' : '删除' }}</button>
         </div>
       </div>
       <table>
@@ -78,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
 import { api, downloadText } from '../../api'
 
 const notify = inject('notify')
@@ -93,6 +99,10 @@ const busy = ref(false)
 const busyProvision = ref(false)
 const busyAction = ref('')
 const selected = ref(new Set())
+const loading = ref(false)
+const updatedAt = ref('')
+const POLL_MS = 1000
+let timer = null
 
 const courses = computed(() => {
   const set = new Set(users.value.map((u) => u.course).filter(Boolean))
@@ -126,7 +136,23 @@ function toggleAll() {
   selected.value = s
 }
 
-onMounted(load)
+onMounted(() => {
+  refresh()
+  timer = setInterval(refresh, POLL_MS)
+})
+onUnmounted(() => clearInterval(timer))
+
+async function refresh() {
+  if (loading.value) return
+  loading.value = true
+  try {
+    await load()
+    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } finally {
+    loading.value = false
+  }
+}
+
 async function load() {
   users.value = await api.listUsers()
   templates.value = await api.listTemplates()
@@ -217,10 +243,13 @@ function fmtTime(ts) {
 <style scoped>
 .page-head {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 20px;
 }
+.head-left { display: flex; align-items: baseline; gap: 12px; }
+.head-right { display: flex; align-items: center; gap: 14px; }
+.updated { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
 h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
 .meta { color: var(--text-2); font-size: 12.5px; }
 .batch { margin-bottom: 18px; }

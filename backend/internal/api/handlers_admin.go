@@ -235,7 +235,7 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "delete", "restart", "stop":
+	case "delete", "restart", "stop", "start":
 	default:
 		writeError(w, http.StatusBadRequest, "unknown action: "+req.Action)
 		return
@@ -273,16 +273,19 @@ func (s *Server) handleBatchUserAction(w http.ResponseWriter, r *http.Request) {
 					res.Error = err.Error()
 				}
 			}
-		case "restart", "stop":
+		case "start", "restart", "stop":
 			rec, err := s.st.GetContainerByUserID(r.Context(), user.ID)
 			if err != nil {
 				res.OK = false
 				res.Error = "no container"
 				break
 			}
-			if req.Action == "restart" {
+			switch req.Action {
+			case "start":
+				err = s.orch.Start(r.Context(), rec)
+			case "restart":
 				err = s.orch.Restart(r.Context(), rec)
-			} else {
+			case "stop":
 				err = s.orch.Stop(r.Context(), rec)
 			}
 			if err != nil {

@@ -5,7 +5,6 @@
       <div class="head-right">
         <span class="live"><span class="dot"></span>系统在线</span>
         <span class="updated" v-if="updatedAt">更新于 {{ updatedAt }}</span>
-        <button class="btn" @click="refresh" :disabled="loading">{{ loading ? '刷新中…' : '刷新' }}</button>
       </div>
     </div>
 
@@ -115,20 +114,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api, fmtBytes } from '../../api'
 
 const stats = ref(null)
-const loading = ref(false)
 const updatedAt = ref('')
-const POLL_MS = 30000
+const POLL_MS = 1000
 let timer = null
 
 async function refresh() {
-  if (loading.value) return
-  loading.value = true
-  try {
-    stats.value = await api.dashboard()
-    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-  } finally {
-    loading.value = false
-  }
+  stats.value = await api.dashboard()
+  updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
 }
 
 const cards = computed(() => {

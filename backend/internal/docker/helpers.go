@@ -2,7 +2,6 @@ package docker
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"time"
 )
 
@@ -32,21 +31,4 @@ type rawStats struct {
 	MemoryStats struct {
 		Usage uint64 `json:"usage"`
 	} `json:"memory_stats"`
-}
-
-func parseStatsJSON(b []byte) *ContainerStats {
-	var s rawStats
-	_ = json.Unmarshal(b, &s)
-	cs := &ContainerStats{Time: time.Now()}
-	cs.MemBytes = float64(s.MemoryStats.Usage)
-	cpuDelta := float64(s.CPUStats.CPUUsage.TotalUsage - s.PreCPUStats.CPUUsage.TotalUsage)
-	sysDelta := float64(s.CPUStats.SystemUsage - s.PreCPUStats.SystemUsage)
-	ncpu := s.CPUStats.OnlineCPUs
-	if ncpu == 0 {
-		ncpu = 1
-	}
-	if sysDelta > 0 {
-		cs.CPUCores = cpuDelta / sysDelta * float64(ncpu)
-	}
-	return cs
 }
