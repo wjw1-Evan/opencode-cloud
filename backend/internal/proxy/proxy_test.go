@@ -275,6 +275,24 @@ func TestProxyDisabledUser(t *testing.T) {
 	}
 }
 
+func TestProxyDeletedUserRedirectsToLogout(t *testing.T) {
+	p, st, tm := newTestProxy(t)
+	hash, _ := auth.HashPassword("pass12345")
+	user := &model.User{ID: model.NewID(), Username: "stu001", PasswordHash: hash, Role: model.RoleUser, Status: model.StatusActive}
+	st.CreateUser(context.Background(), user)
+	req := authedRequest(t, tm, user, "/")
+	// user deleted from the store while their JWT is still valid
+	st.DeleteUser(context.Background(), user.ID)
+	rec := httptest.NewRecorder()
+	p.Handler(http.NotFoundHandler()).ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect to login, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/platform/auth/logout" {
+		t.Fatalf("expected redirect to /platform/auth/logout, got %q", loc)
+	}
+}
+
 func addUserOnly(t *testing.T, st store.Store, username string) *model.User {
 	t.Helper()
 	hash, _ := auth.HashPassword("pass12345")

@@ -98,7 +98,10 @@ func (p *Proxy) Handler(next http.Handler) http.Handler {
 
 		user, err := p.st.GetUserByID(r.Context(), claims.UserID)
 		if err != nil {
-			http.Error(w, "user not found", http.StatusForbidden)
+			// The JWT still parses but the user is gone: clear the stale
+			// cookie via logout, which bounces the browser to the login page.
+			// A bare 403 would leave the user staring at "user not found".
+			http.Redirect(w, r, "/platform/auth/logout", http.StatusFound)
 			return
 		}
 		if user.Status == model.StatusDisabled {

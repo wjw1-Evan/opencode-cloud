@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS image_templates (
     workspace_dir  TEXT NOT NULL DEFAULT '/workspace',
     command        JSONB NOT NULL DEFAULT '[]',
     run_user       TEXT NOT NULL DEFAULT '',
+    cap_add        JSONB NOT NULL DEFAULT '[]',
     is_system      BOOLEAN NOT NULL DEFAULT FALSE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -83,6 +84,7 @@ ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS command JSONB NOT NULL DEFA
 ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS extra_ports JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS run_user TEXT NOT NULL DEFAULT '';
+ALTER TABLE image_templates ADD COLUMN IF NOT EXISTS cap_add JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS course TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_plain TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS access_logs (
@@ -267,18 +269,22 @@ func (p *Postgres) CreateTemplate(ctx context.Context, t *model.Template) error 
 	if err != nil {
 		return err
 	}
+	caps, err := json.Marshal(t.CapAdd)
+	if err != nil {
+		return err
+	}
 	_, err = p.db.ExecContext(ctx, `
-INSERT INTO image_templates (id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, is_system, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		t.ID, t.Name, t.Image, t.InternalPort, extra, envs, t.CPULimit, t.MemLimit, nullString(t.Healthcheck), t.WorkspaceDir, mustJSON(t.Command), t.RunUser, t.IsSystem, t.CreatedAt)
+INSERT INTO image_templates (id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, cap_add, is_system, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		t.ID, t.Name, t.Image, t.InternalPort, extra, envs, t.CPULimit, t.MemLimit, nullString(t.Healthcheck), t.WorkspaceDir, mustJSON(t.Command), t.RunUser, caps, t.IsSystem, t.CreatedAt)
 	return err
 }
 
 func (p *Postgres) scanTemplate(row interface{ Scan(...any) error }) (*model.Template, error) {
 	var t model.Template
 	var health sql.NullString
-	var envs, cmd, extra []byte
-	err := row.Scan(&t.ID, &t.Name, &t.Image, &t.InternalPort, &extra, &envs, &t.CPULimit, &t.MemLimit, &health, &t.WorkspaceDir, &cmd, &t.RunUser, &t.IsSystem, &t.CreatedAt)
+	var envs, cmd, extra, caps []byte
+	err := row.Scan(&t.ID, &t.Name, &t.Image, &t.InternalPort, &extra, &envs, &t.CPULimit, &t.MemLimit, &health, &t.WorkspaceDir, &cmd, &t.RunUser, &caps, &t.IsSystem, &t.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -301,24 +307,27 @@ func (p *Postgres) scanTemplate(row interface{ Scan(...any) error }) (*model.Tem
 	if len(cmd) > 0 {
 		json.Unmarshal(cmd, &t.Command)
 	}
+	if len(caps) > 0 {
+		json.Unmarshal(caps, &t.CapAdd)
+	}
 	return &t, nil
 }
 
 func (p *Postgres) GetTemplate(ctx context.Context, id string) (*model.Template, error) {
 	return p.scanTemplate(p.db.QueryRowContext(ctx, `
-SELECT id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, is_system, created_at
+SELECT id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, cap_add, is_system, created_at
 FROM image_templates WHERE id=$1`, id))
 }
 
 func (p *Postgres) GetTemplateByName(ctx context.Context, name string) (*model.Template, error) {
 	return p.scanTemplate(p.db.QueryRowContext(ctx, `
-SELECT id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, is_system, created_at
+SELECT id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, cap_add, is_system, created_at
 FROM image_templates WHERE name=$1`, name))
 }
 
 func (p *Postgres) ListTemplates(ctx context.Context) ([]*model.Template, error) {
 	rows, err := p.db.QueryContext(ctx, `
-SELECT id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, is_system, created_at
+SELECT id, name, image, internal_port, extra_ports, envs, cpu_limit, mem_limit, healthcheck_cmd, workspace_dir, command, run_user, cap_add, is_system, created_at
 FROM image_templates ORDER BY is_system DESC, name`)
 	if err != nil {
 		return nil, err
@@ -344,10 +353,14 @@ func (p *Postgres) UpdateTemplate(ctx context.Context, t *model.Template) error 
 	if err != nil {
 		return err
 	}
+	caps, err := json.Marshal(t.CapAdd)
+	if err != nil {
+		return err
+	}
 	res, err := p.db.ExecContext(ctx, `
-UPDATE image_templates SET image=$3, internal_port=$4, extra_ports=$5, envs=$6, cpu_limit=$7, mem_limit=$8, healthcheck_cmd=$9, workspace_dir=$10, command=$11, run_user=$12
+UPDATE image_templates SET image=$3, internal_port=$4, extra_ports=$5, envs=$6, cpu_limit=$7, mem_limit=$8, healthcheck_cmd=$9, workspace_dir=$10, command=$11, run_user=$12, cap_add=$13
 WHERE id=$1 AND name=$2`,
-		t.ID, t.Name, t.Image, t.InternalPort, extra, envs, t.CPULimit, t.MemLimit, nullString(t.Healthcheck), t.WorkspaceDir, mustJSON(t.Command), t.RunUser)
+		t.ID, t.Name, t.Image, t.InternalPort, extra, envs, t.CPULimit, t.MemLimit, nullString(t.Healthcheck), t.WorkspaceDir, mustJSON(t.Command), t.RunUser, caps)
 	if err != nil {
 		return err
 	}

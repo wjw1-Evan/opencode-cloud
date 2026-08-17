@@ -76,7 +76,7 @@ var systemTemplates = []model.Template{
 		CPULimit:     1.0,
 		MemLimit:     2 << 30,
 		WorkspaceDir: "/appdata",
-		RunUser:      "1000",
+		CapAdd:       []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID", "NET_BIND_SERVICE"},
 		IsSystem:     true,
 	},
 }
@@ -207,6 +207,9 @@ func (s *Server) handleUpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	if tpl.RunUser != "" {
 		old.RunUser = tpl.RunUser
+	}
+	if tpl.CapAdd != nil {
+		old.CapAdd = tpl.CapAdd
 	}
 	if err := s.st.UpdateTemplate(r.Context(), old); err != nil {
 		writeError(w, http.StatusInternalServerError, "db error")

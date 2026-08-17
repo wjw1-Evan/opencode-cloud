@@ -74,6 +74,7 @@ type Template struct {
 	WorkspaceDir string            `json:"workspace_dir"`
 	Command      []string          `json:"command,omitempty"`
 	RunUser      string            `json:"run_user,omitempty"`
+	CapAdd       []string          `json:"cap_add,omitempty"`
 	IsSystem     bool              `json:"is_system"`
 	CreatedAt    time.Time         `json:"created_at"`
 }

@@ -112,6 +112,7 @@ func (o *Orchestrator) Provision(ctx context.Context, user *model.User, tpl *mod
 		WorkDir:       workDir,
 		Volumes:       volumes,
 		RunUser:       tpl.RunUser,
+		CapAdd:        tpl.CapAdd,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create container: %w", err)

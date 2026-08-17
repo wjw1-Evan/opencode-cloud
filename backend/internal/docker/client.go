@@ -85,6 +85,7 @@ type ContainerConfig struct {
 	WorkDir       string
 	Volumes       []string // "name:path" pairs
 	RunUser       string   // UID/GID to run as (e.g. "1000" or "1000:1000")
+	CapAdd        []string // extra Linux capabilities to add
 }
 
 // CreateContainer builds and starts a container on the shared network.
@@ -126,6 +127,9 @@ func (c *Client) CreateContainer(ctx context.Context, cfg ContainerConfig) (id s
 		},
 		SecurityOpt: []string{"no-new-privileges"},
 		CapDrop:     []string{"ALL"},
+	}
+	if len(cfg.CapAdd) > 0 {
+		hostCfg.CapAdd = cfg.CapAdd
 	}
 	netCfg := &network.NetworkingConfig{}
 
