@@ -30,11 +30,11 @@
         </select>
         <span class="sel-info">已选 {{ selected.size }} 个用户</span>
         <div class="toolbar-btns">
-          <button class="btn" :disabled="!selected.size" @click="bulkProvision">重建</button>
-          <button class="btn" :disabled="!selected.size" @click="bulkAction('start')">启动</button>
-          <button class="btn" :disabled="!selected.size" @click="bulkAction('restart')">重启</button>
-          <button class="btn" :disabled="!selected.size" @click="bulkAction('stop')">停止</button>
-          <button class="btn btn-danger" :disabled="!selected.size" @click="bulkAction('delete')">删除</button>
+          <button class="btn" :disabled="!selected.size || busyProvision" @click="bulkProvision">{{ busyProvision ? '重建中…' : '重建' }}</button>
+          <button class="btn" :disabled="!selected.size || busyAction" @click="bulkAction('start')">{{ busyAction === 'start' ? '启动中…' : '启动' }}</button>
+          <button class="btn" :disabled="!selected.size || busyAction" @click="bulkAction('restart')">{{ busyAction === 'restart' ? '重启中…' : '重启' }}</button>
+          <button class="btn" :disabled="!selected.size || busyAction" @click="bulkAction('stop')">{{ busyAction === 'stop' ? '停止中…' : '停止' }}</button>
+          <button class="btn btn-danger" :disabled="!selected.size || busyAction" @click="bulkAction('delete')">{{ busyAction === 'delete' ? '删除中…' : '删除' }}</button>
         </div>
       </div>
       <table>
@@ -90,6 +90,8 @@ const course = ref('')
 const courseFilter = ref('')
 const tplId = ref('')
 const busy = ref(false)
+const busyProvision = ref(false)
+const busyAction = ref('')
 const selected = ref(new Set())
 
 const courses = computed(() => {
@@ -139,7 +141,7 @@ function cont(userId) {
 async function bulkProvision() {
   if (!selected.value.size) return notify('请先选择用户', 'err')
   if (!confirm(`重建选中的 ${selected.value.size} 个用户的容器？将删除并重建现有容器（数据卷保留，使用各自原模板）。`)) return
-  busy.value = true
+  busyProvision.value = true
   try {
     const pc = await api.provisionBatch({ template_id: tplId.value || '', user_ids: [...selected.value], force: true })
     const fails = (pc.results || []).filter((x) => !x.ok)
@@ -152,7 +154,7 @@ async function bulkProvision() {
   } catch (e) {
     notify(e.message, 'err')
   } finally {
-    busy.value = false
+    busyProvision.value = false
   }
 }
 
@@ -161,7 +163,7 @@ async function bulkAction(action) {
   const names = [...selected.value].map((id) => users.value.find((u) => u.id === id)).filter(Boolean).map((u) => u.username)
   const label = { start: '启动', restart: '重启', stop: '停止', delete: '删除' }[action]
   if (!confirm(`确认对 ${names.length} 个用户执行"${label}"？`)) return
-  busy.value = true
+  busyAction.value = action
   try {
     const results = await api.batchUserAction({ user_ids: [...selected.value], action })
     const okN = results.filter((r) => r.ok).length
@@ -171,7 +173,7 @@ async function bulkAction(action) {
   } catch (e) {
     notify(e.message, 'err')
   } finally {
-    busy.value = false
+    busyAction.value = ''
   }
 }
 
