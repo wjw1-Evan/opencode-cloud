@@ -87,14 +87,25 @@ JWT_SECRET=$(openssl rand -hex 32) docker compose up -d
 ### 方式 B：本地开发（前后端分离）
 
 ```bash
-# 1. 数据库（本地跑单测可用 store 的内存实现，跑服务需要 PostgreSQL）
+# 使用开发环境 compose（自动构建本地镜像）
+docker compose -f docker-compose.dev.yml up -d
+
+# 打开 http://localhost: 首次访问设置管理员账户
+# 停止
+docker compose -f docker-compose.dev.yml down
+```
+
+或手动分离启动：
+
+```bash
+# 1. 数据库
 docker run -d --name devcapsule-db \
   -e POSTGRES_USER=opencode -e POSTGRES_PASSWORD=opencode \
   -e POSTGRES_DB=opencode -p 5432:5432 postgres:17-alpine
 
-# 2. 后端（默认监听 :8080；启动时自动迁移建表、创建管理员、seed 系统模板、建网络）
+# 2. 后端（默认监听 :8080；启动时自动迁移建表、seed 系统模板）
 export DATABASE_URL="postgres://opencode:opencode@localhost:5432/opencode?sslmode=disable"
-export JWT_SECRET="dev-secret" ADMIN_PASSWORD="admin123" NETWORK_NAME="devcapsule_user-net"
+export JWT_SECRET="dev-secret"
 cd backend && go run ./cmd/server
 
 # 3. 前端（Vite dev server，仅代理 /api 与 /dc-static；/platform 接口需自行在
