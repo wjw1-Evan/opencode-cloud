@@ -82,7 +82,7 @@ async function submit() {
 .nebula {
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
+  filter: blur(60px);
   opacity: 0.5;
   animation: drift 18s ease-in-out infinite alternate;
 }
@@ -155,4 +155,12 @@ form { text-align: left; }
 }
 @keyframes scanline { from { left: -60%; } to { left: 120%; } }
 .err { color: var(--err); font-size: 13px; margin-top: 14px; text-align: center; }
+
+@media (max-width: 720px) {
+  .login-card {
+    width: calc(100vw - 28px);
+    max-width: 380px;
+    padding: 30px 22px;
+  }
+}
 </style>

@@ -119,7 +119,7 @@ func (s *Server) Router() http.Handler {
 	}))
 	root.Handle("/", s.rootHandler())
 
-	return s.CORS(s.RequestLog(root))
+	return s.RequestLog(root)
 }
 
 // rootHandler routes the bare origin based on the caller's identity:

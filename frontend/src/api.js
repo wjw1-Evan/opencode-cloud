@@ -109,7 +109,8 @@ export function downloadText(filename, text, mime = 'text/plain') {
   a.href = url
   a.download = filename
   a.click()
-  URL.revokeObjectURL(url)
+  // Defer revocation so Safari keeps the download alive.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export function fmtBytes(n) {
@@ -119,12 +120,4 @@ export function fmtBytes(n) {
   let v = n
   while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
   return `${v.toFixed(1)} ${units[i]}`
-}
-
-export function fmtDur(ms) {
-  if (!ms) return '-'
-  const s = Math.floor(ms / 1000)
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  return `${m}m${s % 60}s`
 }

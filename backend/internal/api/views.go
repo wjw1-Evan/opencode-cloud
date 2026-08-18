@@ -16,12 +16,12 @@ type ContainerView struct {
 	UserID        string `json:"user_id"`
 	TemplateID    string `json:"template_id"`
 	ContainerID   string `json:"container_id"`
-	ContainerName string   `json:"container_name"`
-	Status        string   `json:"status"`
-	StartedAt     string   `json:"started_at"`
-	Network       string   `json:"network"`
-	ExpectedNet   string   `json:"expected_network"`
-	InternalPort  int      `json:"internal_port"`
+	ContainerName string `json:"container_name"`
+	Status        string `json:"status"`
+	StartedAt     string `json:"started_at"`
+	Network       string `json:"network"`
+	ExpectedNet   string `json:"expected_network"`
+	InternalPort  int    `json:"internal_port"`
 	ExtraPorts    []int  `json:"extra_ports"`
 	Username      string `json:"username"`
 	UserStatus    string `json:"user_status"`

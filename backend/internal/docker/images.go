@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 )
 
@@ -41,4 +42,10 @@ func (c *Client) PullImage(ctx context.Context, name string) error {
 	defer rc.Close()
 	_, err = io.Copy(io.Discard, rc)
 	return err
+}
+
+// ListAllContainers returns every container on the host (running or not).
+// It is used to detect which images are still referenced by containers.
+func (c *Client) ListAllContainers(ctx context.Context) ([]container.Summary, error) {
+	return c.cli.ContainerList(ctx, container.ListOptions{All: true})
 }

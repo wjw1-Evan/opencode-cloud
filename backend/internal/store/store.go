@@ -8,12 +8,12 @@ import (
 )
 
 type AccessLogsSummary struct {
-	Count       int64
-	Bytes       int64
-	LatencySum  int64
-	Last        *time.Time
-	Online      int64
-	Last24H     [24]int64
+	Count      int64
+	Bytes      int64
+	LatencySum int64
+	Last       *time.Time
+	Online     int64
+	Last24H    [24]int64
 }
 
 type Store interface {
@@ -28,6 +28,10 @@ type Store interface {
 	UpdateUser(ctx context.Context, u *model.User) error
 	DeleteUser(ctx context.Context, id string) error
 	CountUsers(ctx context.Context) (int64, error)
+
+	CreateRefreshToken(ctx context.Context, jti, userID string, expiresAt time.Time) error
+	ConsumeRefreshToken(ctx context.Context, jti, userID string) (bool, error)
+	RevokeRefreshTokens(ctx context.Context, userID string) error
 
 	CreateContainer(ctx context.Context, c *model.Container) error
 	GetContainerByUserID(ctx context.Context, userID string) (*model.Container, error)

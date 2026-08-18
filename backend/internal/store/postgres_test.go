@@ -168,6 +168,50 @@ func TestPostgresCRUD(t *testing.T) {
 		t.Fatalf("expected stopped containers, got %v", stats)
 	}
 
+	// refresh-token lifecycle: consume-once, replay rejection, revocation,
+	// and expiry all enforced at the storage layer
+	future := now.Add(24 * time.Hour)
+	if err := st.CreateRefreshToken(ctx, "jti-1", u.ID, future); err != nil {
+		t.Fatalf("create refresh token: %v", err)
+	}
+	ok, err := st.ConsumeRefreshToken(ctx, "jti-1", u.ID)
+	if err != nil || !ok {
+		t.Fatalf("first consume should succeed: ok=%v err=%v", ok, err)
+	}
+	ok, err = st.ConsumeRefreshToken(ctx, "jti-1", u.ID)
+	if err != nil || ok {
+		t.Fatalf("replayed consume must fail: ok=%v err=%v", ok, err)
+	}
+
+	if err := st.CreateRefreshToken(ctx, "jti-2", u.ID, future); err != nil {
+		t.Fatalf("create refresh token 2: %v", err)
+	}
+	if err := st.RevokeRefreshTokens(ctx, u.ID); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	ok, err = st.ConsumeRefreshToken(ctx, "jti-2", u.ID)
+	if err != nil || ok {
+		t.Fatalf("consuming a revoked token must fail: ok=%v err=%v", ok, err)
+	}
+
+	past := now.Add(-time.Hour)
+	if err := st.CreateRefreshToken(ctx, "jti-3", u.ID, past); err != nil {
+		t.Fatalf("create expired refresh token: %v", err)
+	}
+	ok, err = st.ConsumeRefreshToken(ctx, "jti-3", u.ID)
+	if err != nil || ok {
+		t.Fatalf("consuming an expired token must fail: ok=%v err=%v", ok, err)
+	}
+
+	// a token belonging to another user cannot be consumed
+	if err := st.CreateRefreshToken(ctx, "jti-4", u.ID, future); err != nil {
+		t.Fatalf("create refresh token 4: %v", err)
+	}
+	ok, err = st.ConsumeRefreshToken(ctx, "jti-4", "someone-else")
+	if err != nil || ok {
+		t.Fatalf("cross-user consume must fail: ok=%v err=%v", ok, err)
+	}
+
 	// cleanup
 	if err := st.DeleteUser(ctx, u.ID); err != nil {
 		t.Fatalf("delete user: %v", err)

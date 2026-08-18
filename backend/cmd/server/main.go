@@ -18,6 +18,9 @@ import (
 func main() {
 	logger := log.New(os.Stdout, "[devcapsule] ", log.LstdFlags)
 	cfg := config.Load()
+	if cfg.JWTSecret == "dev-secret-change-me" {
+		logger.Printf("WARNING: using the default JWT_SECRET; set a strong secret in production")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -52,6 +55,12 @@ func main() {
 		Addr:              cfg.Addr,
 		Handler:           srv.Router(),
 		ReadHeaderTimeout: 30 * time.Second,
+		// Generous read window so multi-GB image imports over slower links
+		// are not cut off. WriteTimeout is intentionally omitted: WebSocket
+		// and SSE streams proxied to user containers can stay open indefinitely.
+		ReadTimeout:    600 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 	go srv.StartBackground(ctx)
 	go func() {

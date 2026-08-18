@@ -19,6 +19,14 @@ type Memory struct {
 	templates  map[string]*model.Template
 	byTplName  map[string]string
 	logs       []*model.AccessLog
+	refresh    map[string]*memRefresh
+}
+
+type memRefresh struct {
+	userID    string
+	expiresAt time.Time
+	consumed  bool
+	revoked   bool
 }
 
 func NewMemory() *Memory {
@@ -30,6 +38,7 @@ func NewMemory() *Memory {
 		templates:  map[string]*model.Template{},
 		byTplName:  map[string]string{},
 		logs:       []*model.AccessLog{},
+		refresh:    map[string]*memRefresh{},
 	}
 }
 
@@ -45,6 +54,38 @@ func (m *Memory) CreateUser(ctx context.Context, u *model.User) error {
 	copy := *u
 	m.users[u.ID] = &copy
 	m.byName[u.Username] = u.ID
+	return nil
+}
+
+func (m *Memory) CreateRefreshToken(ctx context.Context, jti, userID string, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.refresh[jti]; ok {
+		return ErrDuplicate
+	}
+	m.refresh[jti] = &memRefresh{userID: userID, expiresAt: expiresAt}
+	return nil
+}
+
+func (m *Memory) ConsumeRefreshToken(ctx context.Context, jti, userID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.refresh[jti]
+	if !ok || rec.userID != userID || rec.consumed || rec.revoked || !time.Now().Before(rec.expiresAt) {
+		return false, nil
+	}
+	rec.consumed = true
+	return true, nil
+}
+
+func (m *Memory) RevokeRefreshTokens(ctx context.Context, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, rec := range m.refresh {
+		if rec.userID == userID && !rec.consumed && !rec.revoked {
+			rec.revoked = true
+		}
+	}
 	return nil
 }
 

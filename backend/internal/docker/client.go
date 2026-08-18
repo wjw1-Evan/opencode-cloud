@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -137,9 +137,7 @@ func (c *Client) CreateContainer(ctx context.Context, cfg ContainerConfig) (id s
 	}
 	netCfg := &network.NetworkingConfig{}
 
-	for _, v := range cfg.Volumes {
-		hostCfg.Binds = append(hostCfg.Binds, v)
-	}
+	hostCfg.Binds = append(hostCfg.Binds, cfg.Volumes...)
 
 	created, err := c.cli.ContainerCreate(ctx, res, hostCfg, netCfg, nil, cfg.Name)
 	if err != nil {
@@ -180,7 +178,7 @@ type InspectInfo struct {
 func (c *Client) InspectRuntime(ctx context.Context, id string) (*InspectInfo, error) {
 	info, err := c.cli.ContainerInspect(ctx, id)
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if cerrdefs.IsNotFound(err) {
 			return &InspectInfo{}, nil
 		}
 		return nil, err
@@ -304,7 +302,7 @@ func ProbeHTTP(ctx context.Context, host string, port int) (bool, error) {
 }
 
 // ListManaged returns container IDs labelled as devcapsule managed.
-func (c *Client) ListManaged(ctx context.Context) ([]types.Container, error) {
+func (c *Client) ListManaged(ctx context.Context) ([]container.Summary, error) {
 	return c.cli.ContainerList(ctx, container.ListOptions{
 		All: true,
 		Filters: filters.NewArgs(

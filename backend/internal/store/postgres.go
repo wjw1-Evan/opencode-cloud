@@ -106,13 +106,58 @@ CREATE TABLE IF NOT EXISTS access_logs (
     latency_ms BIGINT,
     ts         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    jti         TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    revoked_at  TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_containers_user ON user_containers(user_id);
 CREATE INDEX IF NOT EXISTS idx_access_logs_user_ts ON access_logs(user_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
 `
 
 func (p *Postgres) Migrate(ctx context.Context) error {
 	_, err := p.db.ExecContext(ctx, schema)
+	return err
+}
+
+// CreateRefreshToken records a refresh token so it can be consumed once and
+// revoked on logout. Expired rows are cleaned up opportunistically on issue.
+func (p *Postgres) CreateRefreshToken(ctx context.Context, jti, userID string, expiresAt time.Time) error {
+	if _, err := p.db.ExecContext(ctx, `DELETE FROM refresh_tokens WHERE expires_at < now()`); err != nil {
+		return err
+	}
+	_, err := p.db.ExecContext(ctx, `
+INSERT INTO refresh_tokens (jti, user_id, expires_at) VALUES ($1,$2,$3)`,
+		jti, userID, expiresAt)
+	return err
+}
+
+// ConsumeRefreshToken atomically marks a refresh token as used. It reports
+// false when the token is unknown, expired, already consumed, or revoked, so
+// replaying the same token is rejected.
+func (p *Postgres) ConsumeRefreshToken(ctx context.Context, jti, userID string) (bool, error) {
+	res, err := p.db.ExecContext(ctx, `
+UPDATE refresh_tokens SET consumed_at = now()
+WHERE jti=$1 AND user_id=$2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
+		jti, userID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// RevokeRefreshTokens invalidates every outstanding refresh token for a user
+// (e.g. on logout), without touching tokens that were already consumed.
+func (p *Postgres) RevokeRefreshTokens(ctx context.Context, userID string) error {
+	_, err := p.db.ExecContext(ctx, `
+UPDATE refresh_tokens SET revoked_at = now()
+WHERE user_id=$1 AND revoked_at IS NULL AND consumed_at IS NULL`, userID)
 	return err
 }
 

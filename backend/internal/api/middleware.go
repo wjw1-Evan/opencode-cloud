@@ -109,19 +109,6 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, errors.New("underlying ResponseWriter does not support hijacking")
 }
 
-func (s *Server) CORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 type loginLimiter struct {
 	mu     sync.Mutex
 	hits   map[string]*window
@@ -139,7 +126,12 @@ func newLoginLimiter() *loginLimiter {
 	return &loginLimiter{hits: map[string]*window{}, window: time.Minute, max: 10}
 }
 
-func (l *loginLimiter) allow(key string) bool {
+// deny records a failed login attempt for the key and reports true while the
+// key is still within its failure budget. Once the budget is exceeded it
+// reports false and the caller should respond 429. Successful logins never
+// call deny, so a whole class logging in at once from one NAT IP is not
+// blocked; only repeated failed attempts (brute force) are throttled.
+func (l *loginLimiter) deny(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()

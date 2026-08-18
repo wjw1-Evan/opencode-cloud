@@ -15,12 +15,12 @@
         </thead>
         <tbody>
           <tr v-for="tpl in templates" :key="tpl.id">
-            <td>{{ tpl.name }}<span v-if="tpl.is_system" class="badge system">{{ t('system') }}</span></td>
-            <td><code>{{ tpl.image }}</code></td>
-            <td>{{ tpl.internal_port }}{{ (tpl.extra_ports || []).length ? ' / ' + (tpl.extra_ports || []).join(',') : '' }}</td>
-            <td>{{ tpl.cpu_limit }}</td>
-            <td>{{ fmtBytes(tpl.mem_limit) }}</td>
-            <td class="ops">
+            <td :data-label="t('thName')">{{ tpl.name }}<span v-if="tpl.is_system" class="badge system">{{ t('system') }}</span></td>
+            <td :data-label="t('thImage')"><code>{{ tpl.image }}</code></td>
+            <td :data-label="t('thPort')">{{ tpl.internal_port }}{{ (tpl.extra_ports || []).length ? ' / ' + (tpl.extra_ports || []).join(',') : '' }}</td>
+            <td :data-label="t('thCpu')">{{ tpl.cpu_limit }}</td>
+            <td :data-label="t('thMem')">{{ fmtBytes(tpl.mem_limit) }}</td>
+            <td class="ops" :data-label="t('thActions')">
               <button class="btn" @click="openEdit(tpl)">{{ t('edit') }}</button>
               <button class="btn btn-danger" :disabled="tpl.is_system" @click="del(tpl)">{{ t('delete') }}</button>
             </td>
@@ -31,7 +31,7 @@
     </div>
 
     <div v-if="showModal" class="modal-mask" @click.self="close">
-      <div class="modal">
+      <div class="modal modal-lg">
         <h3>{{ editing ? t('editTemplate') : t('newTemplateModal') }}</h3>
         <div class="grid">
           <div><label>{{ t('nameLabel') }}</label><input v-model="f.name" :placeholder="t('namePlaceholder')" /></div>
@@ -40,16 +40,16 @@
           <div><label>{{ t('extraPorts') }}</label><input v-model="extraPortsText" :placeholder="t('extraPortsPlaceholder')" /></div>
           <div><label>{{ t('cpuLimit') }}</label><input v-model.number="f.cpu_limit" type="number" step="0.1" /></div>
           <div><label>{{ t('memLimit') }}</label><input v-model.number="memGb" type="number" step="0.5" /></div>
-          <div><label>{{ t('workDir') }}</label><input v-model="f.workspace_dir" /></div>
+          <div class="span2"><label>{{ t('workDir') }}</label><input v-model="f.workspace_dir" /></div>
         </div>
-        <div class="hint" style="margin-top: 12px">
+        <div class="hint" style="margin-top: 18px">
           {{ t('extraPortsHint') }}
         </div>
-        <div style="margin-top: 12px">
+        <div style="margin-top: 18px">
           <label>{{ t('startCmd') }}</label>
           <input v-model="cmdText" :placeholder="t('startCmdPlaceholder')" />
         </div>
-        <div style="margin-top: 12px">
+        <div style="margin-top: 18px">
           <label>{{ t('envVars') }}</label>
           <textarea v-model="envsText" rows="4" :placeholder="t('envVarsPlaceholder')"></textarea>
         </div>
@@ -87,7 +87,7 @@ const envsText = ref('')
 const cmdText = ref('')
 const extraPortsText = ref('')
 const updatedAt = ref('')
-const POLL_MS = 1000
+const POLL_MS = 5000
 let timer = null
 
 const confirmVisible = ref(false)
@@ -133,9 +133,10 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer))
 
 async function refresh() {
+  if (document.hidden) return
   try {
     templates.value = await api.listTemplates()
-    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    updatedAt.value = new Date().toLocaleTimeString(navigator.language || 'zh-CN', { hour12: false })
   } catch (e) {
     notify(e.message, 'err')
   }
@@ -198,13 +199,54 @@ async function onConfirmDelete() {
 <style scoped>
 .head-right { display: flex; align-items: center; gap: 14px; }
 .updated { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 18px; }
 .grid .span2 { grid-column: span 2; }
+.grid > div { min-width: 0; }
+.grid label { margin-bottom: 7px; }
+.card {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+table { min-width: 640px; }
 .badge.system {
   margin-left: 8px;
   color: var(--cyan);
   border-color: rgba(34, 211, 238, 0.4);
   background: rgba(34, 211, 238, 0.08);
   font-size: 10.5px;
+}
+@media (max-width: 720px) {
+  table { min-width: 0; }
+  thead { display: none; }
+  tbody, tr, td { display: block; width: 100%; }
+  tr {
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+    text-align: right;
+  }
+  td:last-child { border-bottom: none; }
+  td::before {
+    content: attr(data-label);
+    color: var(--text-2);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  td code { word-break: break-all; }
+  .ops { justify-content: flex-end; }
+  .grid { grid-template-columns: 1fr; }
+  .grid .span2 { grid-column: span 1; }
 }
 </style>

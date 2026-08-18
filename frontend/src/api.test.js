@@ -108,3 +108,75 @@ describe('silent token refresh', () => {
     expect(uploads[1][1].body).toBeInstanceOf(FormData)
   })
 })
+
+describe('api endpoints', () => {
+  let fetchMock
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    globalThis.fetch = fetchMock
+    globalThis.window = { location: { href: '' } }
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete globalThis.window
+  })
+
+  it('exposes every API endpoint', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: {} }))
+    await api.initialized()
+    await api.initialize('admin', 'pass1234')
+    await api.login('admin', 'pass1234')
+    await api.me()
+    await api.changePassword('old', 'new12345')
+    await api.listUsers()
+    await api.batchUsers({ count: 1 })
+    await api.batchUserAction({ user_ids: [], action: 'stop' })
+    await api.updateUser('u1', {})
+    await api.deleteUser('u1')
+    await api.listContainers()
+    await api.provisionBatch({})
+    await api.containerAction('c1', 'start')
+    await api.containerStats('c1')
+    await api.allStats()
+    await api.listImages()
+    await api.getImage('i1')
+    await api.deleteImage('i1')
+    await api.pullImage('nginx:latest')
+    await api.listTemplates()
+    await api.createTemplate({})
+    await api.updateTemplate('t1', {})
+    await api.deleteTemplate('t1')
+    await api.platform()
+    await api.dashboard()
+    expect(fetchMock).toHaveBeenCalledTimes(25)
+  })
+
+  it('uploads an image via multipart', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: { message: 'ok' } }))
+    await api.uploadImage(new File(['x'], 'a.tar'))
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/platform/admin/images/import',
+      expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+    )
+  })
+
+  it('redirects to the login page when the upload refresh fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: 'invalid token' }, 401))
+      .mockResolvedValueOnce(jsonResponse({}, 401))
+    await expect(api.uploadImage(new File(['x'], 'a.tar'))).rejects.toThrow('unauthorized')
+    expect(globalThis.window.location.href).toBe('/')
+  })
+
+  it('surfaces backend error messages', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'boom' }, 400))
+    await expect(api.listUsers()).rejects.toThrow('boom')
+  })
+
+  it('surfaces backend errors from the image upload path', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'too large' }, 413))
+    await expect(api.uploadImage(new File(['x'], 'a.tar'))).rejects.toThrow('too large')
+  })
+})

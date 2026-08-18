@@ -12,22 +12,27 @@
     <div class="card">
       <table>
         <thead>
-          <tr><th>{{ t('thName') }}</th><th>{{ t('thImageId') }}</th><th>{{ t('thSize') }}</th><th>{{ t('thCreatedAt') }}</th><th>{{ t('thActions') }}</th></tr>
+          <tr><th>{{ t('thName') }}</th><th>{{ t('thImageId') }}</th><th>{{ t('thSize') }}</th><th>{{ t('thUsage') }}</th><th>{{ t('thCreatedAt') }}</th><th>{{ t('thActions') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="im in images" :key="im.id">
-            <td>
+            <td :data-label="t('thName')">
               <span v-if="im.repo_tags && im.repo_tags.length && im.repo_tags[0] !== '<none>:<none>'">
                 {{ im.repo_tags[0] }}
               </span>
               <span v-else class="none-tag">&lt;none&gt;</span>
             </td>
-            <td><code>{{ shortId(im.id) }}</code></td>
-            <td>{{ fmtBytes(im.size) }}</td>
-            <td>{{ fmtTime(im.created) }}</td>
-            <td class="ops">
-              <button class="btn" @click="inspect(im)">{{ t('edit') }}</button>
-              <button class="btn btn-danger" @click="del(im)">{{ t('delete') }}</button>
+            <td :data-label="t('thImageId')"><code>{{ shortId(im.id) }}</code></td>
+            <td :data-label="t('thSize')">{{ fmtBytes(im.size) }}</td>
+            <td :data-label="t('thUsage')">
+              <span class="badge" :class="im.in_use ? 'inuse' : 'free'" :title="inUseTitle(im)">
+                {{ im.in_use ? t('inUse') : t('notInUse') }}
+              </span>
+            </td>
+            <td :data-label="t('thCreatedAt')">{{ fmtTime(im.created) }}</td>
+            <td class="ops" :data-label="t('thActions')">
+              <button class="btn" @click="inspect(im)">{{ t('detail') }}</button>
+              <button class="btn btn-danger" :disabled="im.in_use" :title="im.in_use ? t('inUseTip') : ''" @click="del(im)">{{ t('delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -76,33 +81,86 @@
     </div>
 
     <div v-if="showDetail" class="modal-mask" @click.self="showDetail = false">
-      <div class="modal modal-lg">
+      <div class="modal modal-lg detail-modal">
         <h3>{{ t('detailModalTitle') }}</h3>
-        <div v-if="detail" class="detail-grid">
-          <div class="detail-row"><span class="label">ID</span><code>{{ detail.id }}</code></div>
-          <div class="detail-row"><span class="label">{{ t('architecture') }}</span>{{ detail.architecture }}</div>
-          <div class="detail-row"><span class="label">{{ t('os') }}</span>{{ detail.os }}</div>
-          <div class="detail-row"><span class="label">{{ t('thSize') }}</span>{{ fmtBytes(detail.size) }}</div>
-          <div class="detail-row"><span class="label">{{ t('author') }}</span>{{ detail.author || '-' }}</div>
-          <div class="detail-row"><span class="label">{{ t('workDir') }}</span>{{ detail.working_dir || '-' }}</div>
-          <div class="detail-row full"><span class="label">{{ t('tags') }}</span>
-            <span v-for="tag in detail.repo_tags" :key="tag" class="tag-badge">{{ tag }}</span>
-            <span v-if="!detail.repo_tags || !detail.repo_tags.length">-</span>
+        <div v-if="detail">
+          <div class="detail-head">
+            <span class="badge" :class="detail.in_use ? 'inuse' : 'free'">{{ detail.in_use ? t('inUse') : t('notInUse') }}</span>
+            <span class="detail-head-name">{{ detail.repo_tags && detail.repo_tags[0] ? detail.repo_tags[0] : shortId(detail.id) }}</span>
           </div>
-          <div class="detail-row full" v-if="detail.cmd && detail.cmd.length">
-            <span class="label">CMD</span><code>{{ detail.cmd.join(' ') }}</code>
+
+          <div class="detail-section">
+            <div class="section-title">{{ t('basicInfo') }}</div>
+            <div class="detail-grid">
+              <div class="detail-row"><span class="label">ID</span><code>{{ shortId(detail.id) }}</code></div>
+              <div class="detail-row"><span class="label">{{ t('tags') }}</span>
+                <span v-for="tag in detail.repo_tags" :key="tag" class="tag-badge">{{ tag }}</span>
+                <span v-if="!detail.repo_tags || !detail.repo_tags.length">-</span>
+              </div>
+              <div class="detail-row full"><span class="label">{{ t('repoDigests') }}</span>
+                <div v-if="detail.repo_digests && detail.repo_digests.length" class="digest-list">
+                  <code v-for="d in detail.repo_digests" :key="d">{{ d }}</code>
+                </div>
+                <span v-else>-</span>
+              </div>
+              <div class="detail-row"><span class="label">{{ t('architecture') }}</span>{{ detail.architecture }}{{ detail.variant ? ' / ' + detail.variant : '' }}</div>
+              <div class="detail-row"><span class="label">{{ t('os') }}</span>{{ detail.os }}</div>
+              <div class="detail-row"><span class="label">{{ t('thCreatedAt') }}</span>{{ fmtCreated(detail.created) }}</div>
+              <div class="detail-row"><span class="label">{{ t('thSize') }}</span>{{ fmtBytes(detail.size) }}</div>
+              <div class="detail-row"><span class="label">{{ t('author') }}</span>{{ detail.author || '-' }}</div>
+            </div>
           </div>
-          <div class="detail-row full" v-if="detail.entrypoint && detail.entrypoint.length">
-            <span class="label">Entrypoint</span><code>{{ detail.entrypoint.join(' ') }}</code>
+
+          <div class="detail-section">
+            <div class="section-title">{{ t('runConfig') }}</div>
+            <div class="detail-grid">
+              <div class="detail-row"><span class="label">{{ t('runUser') }}</span>{{ detail.user || '-' }}</div>
+              <div class="detail-row"><span class="label">{{ t('workDir') }}</span>{{ detail.working_dir || '-' }}</div>
+              <div class="detail-row"><span class="label">{{ t('exposedPorts') }}</span>
+                <span v-for="p in detail.exposed_ports || []" :key="p" class="tag-badge">{{ p }}</span>
+                <span v-if="!detail.exposed_ports || !detail.exposed_ports.length">-</span>
+              </div>
+              <div class="detail-row"><span class="label">{{ t('volumes') }}</span>
+                <span v-for="v in detail.volumes || []" :key="v" class="tag-badge">{{ v }}</span>
+                <span v-if="!detail.volumes || !detail.volumes.length">-</span>
+              </div>
+              <div class="detail-row"><span class="label">{{ t('stopSignal') }}</span>{{ detail.stop_signal || '-' }}</div>
+              <div class="detail-row full"><span class="label">{{ t('healthcheck') }}</span>{{ detail.healthcheck || '-' }}</div>
+            </div>
           </div>
-          <div class="detail-row full" v-if="detail.env && detail.env.length">
-            <span class="label">{{ t('envVars') }}</span>
+
+          <div class="detail-section" v-if="(detail.entrypoint && detail.entrypoint.length) || (detail.cmd && detail.cmd.length)">
+            <div class="section-title">{{ t('startConfig') }}</div>
+            <div class="detail-grid">
+              <div class="detail-row full" v-if="detail.entrypoint && detail.entrypoint.length">
+                <span class="label">Entrypoint</span><code>{{ detail.entrypoint.join(' ') }}</code>
+              </div>
+              <div class="detail-row full" v-if="detail.cmd && detail.cmd.length">
+                <span class="label">CMD</span><code>{{ detail.cmd.join(' ') }}</code>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section" v-if="detail.env && detail.env.length">
+            <div class="section-title">{{ t('envVars') }}</div>
             <div class="env-list">
               <div v-for="e in detail.env" :key="e" class="env-item"><code>{{ e }}</code></div>
             </div>
           </div>
-          <div class="detail-row full" v-if="detail.layers && detail.layers.length">
-            <span class="label">{{ t('layers') }}</span>{{ detail.layers.length }} {{ t('layerUnit') }}
+
+          <div class="detail-section" v-if="labelItems.length">
+            <div class="section-title">{{ t('labels') }}</div>
+            <div class="label-list">
+              <div v-for="item in labelItems" :key="item.k" class="label-item">
+                <code class="label-key">{{ item.k }}</code>
+                <code class="label-val">{{ item.v }}</code>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <div class="section-title">{{ t('layers') }}</div>
+            <span class="layers-count">{{ detail.layers ? detail.layers.length : 0 }} {{ t('layerUnit') }}</span>
           </div>
         </div>
         <div class="btns">
@@ -122,7 +180,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
 import { api, fmtBytes } from '../../api'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 
@@ -139,7 +197,7 @@ const pullName = ref('')
 const pulling = ref(false)
 const detail = ref(null)
 const updatedAt = ref('')
-const POLL_MS = 1000
+const POLL_MS = 5000
 let timer = null
 
 const confirmVisible = ref(false)
@@ -148,6 +206,24 @@ let deleteTarget = null
 
 function shortId(id) {
   return id ? id.replace('sha256:', '').substring(0, 12) : ''
+}
+
+const labelItems = computed(() => {
+  if (!detail.value || !detail.value.labels) return []
+  return Object.entries(detail.value.labels).map(([k, v]) => ({ k, v }))
+})
+
+function fmtCreated(ts) {
+  if (!ts) return '-'
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return '-'
+  return d.toLocaleString(navigator.language || 'zh-CN', { hour12: false })
+}
+
+function inUseTitle(im) {
+  if (!im.in_use) return t('notInUse')
+  const by = (im.used_by || []).join(', ')
+  return by ? t('inUseBy', { list: by }) : t('inUse')
 }
 
 function fmtTime(ts) {
@@ -174,10 +250,11 @@ async function load() {
 
 async function refresh() {
   if (loading.value || uploading.value || pulling.value) return
+  if (document.hidden) return
   loading.value = true
   try {
     images.value = await api.listImages()
-    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    updatedAt.value = new Date().toLocaleTimeString(navigator.language || 'zh-CN', { hour12: false })
   } catch (e) {
     notify(e.message, 'err')
   } finally {
@@ -237,6 +314,10 @@ async function inspect(im) {
 }
 
 async function del(im) {
+  if (im.in_use) {
+    notify(t('inUseTip'), 'err')
+    return
+  }
   const name = (im.repo_tags && im.repo_tags[0]) || shortId(im.id)
   confirmMessage.value = t('deleteImageConfirm', { name })
   deleteTarget = im
@@ -260,8 +341,15 @@ async function onConfirmDelete() {
 
 <style scoped>
 .head-btns { display: flex; gap: 8px; align-items: center; }
+.card {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+table { min-width: 640px; }
 .updated { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
 .none-tag { color: var(--text-2); font-style: italic; }
+.badge.inuse { color: var(--ok); border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.08); }
+.badge.free { color: var(--text-2); }
 .hint code {
   background: rgba(255,255,255,0.06);
   padding: 1px 5px;
@@ -269,6 +357,30 @@ async function onConfirmDelete() {
   font-size: 11.5px;
 }
 .detail-grid { display: flex; flex-direction: column; gap: 10px; }
+.detail-modal { width: 680px; }
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.detail-head-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-0);
+  word-break: break-all;
+}
+.detail-section { margin-bottom: 18px; }
+.section-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
 .detail-row {
   display: flex;
   align-items: center;
@@ -289,6 +401,14 @@ async function onConfirmDelete() {
   font-size: 12px;
   word-break: break-all;
 }
+.detail-row.full > code { width: 100%; word-break: break-all; }
+.digest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.digest-list code { word-break: break-all; }
 .tag-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -313,5 +433,55 @@ async function onConfirmDelete() {
   font-size: 11.5px;
   display: block;
   word-break: break-all;
+}
+.label-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.label-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.label-key { color: var(--violet); flex-shrink: 0; }
+.label-val { color: var(--text-1); word-break: break-all; }
+.layers-count { color: var(--text-1); font-size: 13px; }
+@media (max-width: 720px) {
+  table { min-width: 0; }
+  thead { display: none; }
+  tbody, tr, td { display: block; width: 100%; }
+  tr {
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+    text-align: right;
+  }
+  td:last-child { border-bottom: none; }
+  td::before {
+    content: attr(data-label);
+    color: var(--text-2);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  td code { word-break: break-all; }
+  .ops { justify-content: flex-end; }
+  .detail-row { flex-wrap: wrap; }
+  .detail-modal { width: auto; }
 }
 </style>

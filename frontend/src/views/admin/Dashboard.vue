@@ -3,7 +3,7 @@
     <div class="page-head">
       <h2>{{ t('navDashboard') }}</h2>
       <div class="head-right">
-        <span class="live"><span class="dot"></span>{{ t('onlineStatus') }}</span>
+        <span class="live" :class="liveClass"><span class="dot"></span>{{ liveLabel }}</span>
         <span class="updated" v-if="updatedAt">{{ t('updatedAt') }} {{ updatedAt }}</span>
       </div>
     </div>
@@ -114,23 +114,46 @@ import { ref, computed, onMounted, onUnmounted, inject } from 'vue'
 import { api, fmtBytes } from '../../api'
 
 const { t } = inject('i18n')
+const notify = inject('notify')
 
 const stats = ref(null)
 const updatedAt = ref('')
 const loading = ref(false)
-const POLL_MS = 1000
+const live = ref(true)
+const paused = ref(false)
+const POLL_MS = 5000
 let timer = null
+let onVis = null
 
 async function refresh() {
   if (loading.value) return
+  if (document.hidden) {
+    paused.value = true
+    return
+  }
+  paused.value = false
   loading.value = true
   try {
     stats.value = await api.dashboard()
-    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    live.value = true
+    updatedAt.value = new Date().toLocaleTimeString(navigator.language || 'zh-CN', { hour12: false })
+  } catch (e) {
+    live.value = false
+    notify(e.message, 'err')
   } finally {
     loading.value = false
   }
 }
+
+const liveLabel = computed(() => {
+  if (paused.value) return t('livePaused')
+  return live.value ? t('liveActive') : t('liveError')
+})
+
+const liveClass = computed(() => {
+  if (paused.value) return 'paused'
+  return live.value ? 'on' : 'err'
+})
 
 const cards = computed(() => {
   if (!stats.value) return []
@@ -197,8 +220,13 @@ function coursePct(c) {
 onMounted(() => {
   refresh()
   timer = setInterval(refresh, POLL_MS)
+  onVis = () => { if (!document.hidden) refresh() }
+  document.addEventListener('visibilitychange', onVis)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {
+  clearInterval(timer)
+  if (onVis) document.removeEventListener('visibilitychange', onVis)
+})
 </script>
 
 <style scoped>
@@ -218,15 +246,33 @@ h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
   color: var(--text-2);
   padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(52, 211, 153, 0.3);
-  background: rgba(52, 211, 153, 0.06);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.live.on {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.07);
+}
+.live.err {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.08);
+}
+.live.paused {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.07);
 }
 .live .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 10px var(--ok);
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+.live.on .dot {
   animation: pulse 1.8s ease-in-out infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -273,7 +319,18 @@ h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
   color: var(--cyan);
   background: rgba(34, 211, 238, 0.08);
   border: 1px solid rgba(34, 211, 238, 0.25);
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.12);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
+.stat:nth-child(even) .icon {
+  color: var(--violet);
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.15);
+}
+.stat:hover .icon { transform: translateY(-2px) scale(1.06); }
+.stat:nth-child(even):hover .icon { box-shadow: 0 0 22px rgba(139, 92, 246, 0.35); }
+.stat:hover .icon { box-shadow: 0 0 22px rgba(34, 211, 238, 0.3); }
 .num {
   font-size: 32px;
   font-weight: 700;
@@ -298,6 +355,18 @@ h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
   letter-spacing: 0.08em;
   color: var(--text-1);
   margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-title::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grad);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.7);
+  flex-shrink: 0;
 }
 .panel-title.sub { margin-top: 20px; }
 .divider {
@@ -339,7 +408,7 @@ h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 130px;
+  height: 138px;
   padding: 4px 2px 0;
 }
 .bar {
@@ -379,7 +448,7 @@ h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
 .res-value small { color: var(--text-2); font-weight: 400; font-size: 11.5px; }
 .mono { font-family: var(--font-mono); }
 .bar-track {
-  height: 8px;
+  height: 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
@@ -414,5 +483,11 @@ h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(2, 1fr); }
   .panels { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .stat { padding: 18px 12px; }
+  .num { font-size: 24px; }
+  .icon { width: 34px; height: 34px; }
 }
 </style>

@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	keys := []string{"ADDR", "DATABASE_URL", "JWT_SECRET", "NETWORK_NAME", "IDLE_TIMEOUT_MIN", "BATCH_CONCURRENCY"}
+	keys := []string{"ADDR", "DATABASE_URL", "JWT_SECRET", "NETWORK_NAME", "IDLE_TIMEOUT_MIN", "BATCH_CONCURRENCY", "COOKIE_SECURE"}
 	for _, k := range keys {
 		os.Unsetenv(k)
 	}
@@ -22,6 +22,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.BatchConcurrency != 5 {
 		t.Fatalf("default BatchConcurrency = %d", cfg.BatchConcurrency)
+	}
+	if cfg.SecureCookies {
+		t.Fatal("SecureCookies should default to false")
 	}
 }
 
@@ -47,6 +50,22 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.BatchConcurrency != 10 {
 		t.Fatalf("BatchConcurrency = %d", cfg.BatchConcurrency)
+	}
+}
+
+func TestLoadCookieSecureEnv(t *testing.T) {
+	os.Setenv("COOKIE_SECURE", "1")
+	defer os.Unsetenv("COOKIE_SECURE")
+	if cfg := Load(); !cfg.SecureCookies {
+		t.Fatal("COOKIE_SECURE=1 should enable SecureCookies")
+	}
+	os.Setenv("COOKIE_SECURE", "0")
+	if cfg := Load(); cfg.SecureCookies {
+		t.Fatal("COOKIE_SECURE=0 should disable SecureCookies")
+	}
+	os.Setenv("COOKIE_SECURE", "bogus")
+	if cfg := Load(); cfg.SecureCookies {
+		t.Fatal("invalid COOKIE_SECURE should fall back to default false")
 	}
 }
 

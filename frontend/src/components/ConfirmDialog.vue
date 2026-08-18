@@ -8,8 +8,8 @@
         </div>
         <p class="confirm-msg">{{ message }}</p>
         <div class="confirm-btns">
-          <button class="btn" @click="cancel">{{ cancelText }}</button>
-          <button :class="['btn', type === 'danger' ? 'btn-danger' : 'btn-primary']" @click="confirm">{{ confirmText }}</button>
+          <button class="btn" @click="cancel">{{ cancelText || t('cancel') }}</button>
+          <button :class="['btn', type === 'danger' ? 'btn-danger' : 'btn-primary']" @click="confirm">{{ confirmText || t('dialogConfirm') }}</button>
         </div>
       </div>
     </div>
@@ -17,11 +17,15 @@
 </template>
 
 <script setup>
+import { inject } from 'vue'
+
+const { t } = inject('i18n')
+
 const props = defineProps({
   visible: Boolean,
   message: { type: String, default: '' },
-  confirmText: { type: String, default: '确认' },
-  cancelText: { type: String, default: '取消' },
+  confirmText: { type: String, default: '' },
+  cancelText: { type: String, default: '' },
   type: { type: String, default: 'primary' },
 })
 
@@ -47,8 +51,8 @@ function cancel() { emit('cancel') }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .confirm-modal {
   background: rgba(14, 20, 38, 0.95);
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-lg);
   padding: 28px 32px;

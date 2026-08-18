@@ -18,10 +18,6 @@ type loginRequest struct {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.loginLimit.allow(clientIP(r)) {
-		writeError(w, http.StatusTooManyRequests, "too many attempts, try later")
-		return
-	}
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad request")
@@ -29,11 +25,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := s.st.GetUserByUsername(r.Context(), strings.TrimSpace(req.Username))
 	if err != nil {
+		if !s.loginLimit.deny(clientIP(r)) {
+			writeError(w, http.StatusTooManyRequests, "too many failed attempts, try later")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 	ok, err := auth.VerifyPassword(req.Password, user.PasswordHash)
 	if err != nil || !ok {
+		if !s.loginLimit.deny(clientIP(r)) {
+			writeError(w, http.StatusTooManyRequests, "too many failed attempts, try later")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -45,19 +49,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "account expired")
 		return
 	}
-	access, refresh, err := s.tm.Issue(user.ID, user.Username, string(user.Role))
+	access, refresh, err := s.issueTokens(w, r, user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "token issue failed")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: "access_token", Value: access,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 1800,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name: "refresh_token", Value: refresh,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400,
-	})
 	writeData(w, map[string]any{
 		"user":     user,
 		"access":   access,
@@ -66,17 +62,45 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// issueTokens signs a fresh token pair, records the refresh token server-side
+// (so it can be consumed exactly once and revoked on logout), and writes both
+// cookies.
+func (s *Server) issueTokens(w http.ResponseWriter, r *http.Request, user *model.User) (access, refresh string, err error) {
+	access, refresh, err = s.tm.Issue(user.ID, user.Username, string(user.Role))
+	if err != nil {
+		return "", "", err
+	}
+	claims, err := s.tm.ParseRefresh(refresh)
+	if err != nil {
+		return "", "", err
+	}
+	if err := s.st.CreateRefreshToken(r.Context(), claims.ID, user.ID, claims.ExpiresAt.Time); err != nil {
+		return "", "", err
+	}
+	s.setTokenCookies(w, access, refresh)
+	return access, refresh, nil
+}
+
 // setTokenCookies writes fresh access/refresh cookies (also used to rotate
 // both tokens after a silent refresh).
 func (s *Server) setTokenCookies(w http.ResponseWriter, access, refresh string) {
-	http.SetCookie(w, &http.Cookie{
-		Name: "access_token", Value: access,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 1800,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name: "refresh_token", Value: refresh,
-		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400,
-	})
+	http.SetCookie(w, s.tokenCookie("access_token", access, 1800))
+	http.SetCookie(w, s.tokenCookie("refresh_token", refresh, 86400))
+}
+
+// tokenCookie builds an auth cookie. Secure is applied only when the platform
+// is served over HTTPS (COOKIE_SECURE=1); plain-HTTP dev keeps working with
+// Secure disabled.
+func (s *Server) tokenCookie(name, value string, maxAge int) *http.Cookie {
+	c := &http.Cookie{
+		Name: name, Value: value,
+		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		MaxAge: maxAge, Secure: s.cfg.SecureCookies,
+	}
+	if maxAge < 0 {
+		c.Expires = time.Unix(0, 0)
+	}
+	return c
 }
 
 // tryRefresh silently re-authenticates via the refresh cookie and rotates
@@ -97,11 +121,16 @@ func (s *Server) tryRefresh(w http.ResponseWriter, r *http.Request) (*auth.Claim
 	if st := user.EffectiveStatus(); st == model.StatusDisabled || st == model.StatusExpired {
 		return nil, false
 	}
-	access, refresh, err := s.tm.Issue(user.ID, user.Username, string(user.Role))
-	if err != nil {
+	// Consume first: replaying a stolen refresh token is rejected, and a
+	// failure after this point only forces a re-login rather than leaving
+	// the presented token usable.
+	consumed, err := s.st.ConsumeRefreshToken(r.Context(), claims.ID, claims.UserID)
+	if err != nil || !consumed {
 		return nil, false
 	}
-	s.setTokenCookies(w, access, refresh)
+	if _, _, err := s.issueTokens(w, r, user); err != nil {
+		return nil, false
+	}
 	return claims, true
 }
 
@@ -134,28 +163,30 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "account "+string(st))
 		return
 	}
-	access, refresh, err := s.tm.Issue(user.ID, user.Username, string(user.Role))
+	consumed, err := s.st.ConsumeRefreshToken(r.Context(), claims.ID, claims.UserID)
+	if err != nil || !consumed {
+		writeError(w, http.StatusUnauthorized, "refresh token already used or revoked")
+		return
+	}
+	access, refresh, err := s.issueTokens(w, r, user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "token issue failed")
 		return
 	}
-	// Rotate the refresh token in the cookie too: the browser keeps using the
-	// cookie on the next silent refresh, so without this it would hold a stale
-	// token until the 24h window ends and force a re-login.
-	s.setTokenCookies(w, access, refresh)
 	writeData(w, map[string]any{"access": access, "refresh": refresh})
 }
 
 // handleLogout clears the auth cookies and redirects to the login page.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name: "access_token", Value: "", Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(0, 0),
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name: "refresh_token", Value: "", Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(0, 0),
-	})
+	// Revoke outstanding refresh tokens for the session owner so a stolen
+	// refresh cookie cannot outlive an explicit logout.
+	if c, err := r.Cookie("refresh_token"); err == nil && c.Value != "" {
+		if claims, err := s.tm.ParseRefresh(c.Value); err == nil {
+			s.st.RevokeRefreshTokens(r.Context(), claims.UserID)
+		}
+	}
+	http.SetCookie(w, s.tokenCookie("access_token", "", -1))
+	http.SetCookie(w, s.tokenCookie("refresh_token", "", -1))
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

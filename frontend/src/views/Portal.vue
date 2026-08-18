@@ -2,11 +2,12 @@
   <div class="portal-wrap">
     <div class="nebula n1"></div>
     <div class="nebula n2"></div>
+    <div class="grid-overlay"></div>
 
     <div class="card portal-card">
       <div class="top">
         <h1>{{ t('myEnv') }}</h1>
-        <button class="btn" @click="logout">{{ t('logout') }}</button>
+        <button class="btn" @click="askLogout">{{ t('logout') }}</button>
       </div>
 
       <p class="hello">{{ t('hello') }}<b class="uname">{{ user.username }}</b></p>
@@ -30,7 +31,7 @@
       <p v-else class="meta">{{ t('noContainer') }}</p>
 
       <div class="actions">
-        <a class="btn btn-primary open" :href="entry" target="_blank" rel="noopener">
+        <a class="btn btn-primary open" :class="{ dim: !container }" :href="container ? entry : undefined" target="_blank" rel="noopener" @click="openEnv">
           <span class="dot" :class="{ on: running }"></span>
           {{ t('openEnv') }}
         </a>
@@ -58,18 +59,29 @@
 
       <p class="hint">{{ t('idleHint') }}</p>
     </div>
+
+    <ConfirmDialog
+      :visible="showLogoutConfirm"
+      :message="t('logoutConfirm')"
+      type="danger"
+      @confirm="doLogout"
+      @cancel="showLogoutConfirm = false"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, inject } from 'vue'
 import { api } from '../api'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const { t } = inject('i18n')
+const notify = inject('notify')
 
 const user = ref({})
 const container = ref(null)
 const showPwd = ref(false)
+const showLogoutConfirm = ref(false)
 const oldPwd = ref('')
 const newPwd = ref('')
 const confirmPwd = ref('')
@@ -78,6 +90,13 @@ const pwdError = ref('')
 
 const running = computed(() => container.value && container.value.status === 'running')
 const entry = computed(() => `/`)
+
+function openEnv(e) {
+  if (!container.value) {
+    e.preventDefault()
+    notify(t('noContainer'), 'err')
+  }
+}
 
 async function changePwd() {
   pwdError.value = ''
@@ -117,7 +136,11 @@ async function refresh() {
   } catch {}
 }
 
-async function logout() {
+function askLogout() {
+  showLogoutConfirm.value = true
+}
+
+function doLogout() {
   window.location.href = '/platform/auth/logout'
 }
 </script>
@@ -138,12 +161,22 @@ async function logout() {
 .nebula {
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
+  filter: blur(60px);
   opacity: 0.45;
   animation: drift 16s ease-in-out infinite alternate;
 }
 .n1 { width: 380px; height: 380px; background: rgba(34, 211, 238, 0.35); top: -80px; right: -60px; }
 .n2 { width: 460px; height: 460px; background: rgba(139, 92, 246, 0.35); bottom: -140px; left: -100px; animation-delay: -8s; }
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+}
 @keyframes drift {
   from { transform: translate(0, 0) scale(1); }
   to { transform: translate(-50px, 30px) scale(1.12); }
@@ -198,6 +231,20 @@ h1 {
   position: relative;
   overflow: hidden;
 }
+.open.dim { opacity: 0.45; cursor: not-allowed; }
+.open::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -60%;
+  width: 45%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-20deg);
+  animation: sweep 3s ease-in-out infinite;
+}
+@keyframes sweep {
+  0%, 55% { left: -60%; }
+  100% { left: 140%; }
+}
 .dot {
   display: inline-block;
   width: 8px; height: 8px;
@@ -213,7 +260,7 @@ h1 {
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .hint { color: var(--text-2); font-size: 12px; margin-top: 22px; }
-.pwd-fields { display: flex; flex-direction: column; gap: 10px; }
+.pwd-fields { display: flex; flex-direction: column; gap: 12px; }
 .pwd-fields input {
   padding: 10px 12px;
   border-radius: 8px;
@@ -224,4 +271,15 @@ h1 {
 }
 .pwd-fields input::placeholder { color: var(--text-2); }
 .pwd-error { color: var(--err); font-size: 12px; margin: 0; }
+
+@media (max-width: 720px) {
+  .portal-card {
+    width: calc(100vw - 28px);
+    max-width: 520px;
+    padding: 28px 20px;
+  }
+  .actions { flex-wrap: wrap; }
+  .actions .btn { flex: 1 1 auto; text-align: center; }
+  .top { flex-wrap: wrap; gap: 10px; }
+}
 </style>

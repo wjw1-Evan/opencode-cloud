@@ -21,10 +21,15 @@ if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
         -D /var/lib/postgresql/data \
         -w start
 
-    # Create user and database
-    su-exec postgres psql -c "CREATE USER ${POSTGRES_USER} WITH SUPERUSER PASSWORD '${POSTGRES_PASSWORD}';"
-    su-exec postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
-    su-exec postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};"
+    # Create user and database. psql variables are used so the values are
+    # quoted/escaped properly instead of being interpolated into SQL.
+    # The app account is a plain LOGIN role (no SUPERUSER); as the database
+    # owner it still has full rights over its own database, and migrations
+    # only need CREATE/ALTER/INDEX which the owner can perform.
+    su-exec postgres psql -v user="$POSTGRES_USER" -v pass="$POSTGRES_PASSWORD" -v db="$POSTGRES_DB" <<'SQL'
+CREATE USER :"user" WITH LOGIN PASSWORD :'pass';
+CREATE DATABASE :"db" OWNER :"user";
+SQL
 
     # Stop PostgreSQL
     su-exec postgres /usr/libexec/postgresql16/pg_ctl \

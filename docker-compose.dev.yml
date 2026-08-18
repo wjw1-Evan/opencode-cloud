@@ -6,11 +6,13 @@ services:
     image: devcapsule:dev
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "18080:80"
     environment:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
       IDLE_TIMEOUT_MIN: ${IDLE_TIMEOUT_MIN:-30}
       BATCH_CONCURRENCY: ${BATCH_CONCURRENCY:-5}
+      # Set COOKIE_SECURE=1 when this service is exposed over HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /var/run/docker.sock:/var/run/docker.sock

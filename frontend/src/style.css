@@ -3,6 +3,7 @@
    Deep space glassmorphism with cyan/violet glow.
    ============================================================ */
 * { box-sizing: border-box; }
+::selection { background: rgba(34, 211, 238, 0.28); color: #fff; }
 
 :root {
   --bg-0: #04060d;
@@ -33,25 +34,36 @@ html, body { height: 100%; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(139, 92, 246, 0.22), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.16), transparent 60%),
-    var(--bg-0);
+  background: var(--bg-0);
   color: var(--text-0);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+}
+/* Viewport-anchored ambient glow: stays put while scrolling and never
+   tiles on long pages. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(139, 92, 246, 0.22), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.16), transparent 60%);
 }
 
 a { color: var(--cyan); text-decoration: none; }
 
 /* ---------- glass card ---------- */
 .card {
-  background: var(--glass);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02) 42%, transparent),
+    var(--glass);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: 22px;
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
@@ -78,6 +90,11 @@ a { color: var(--cyan); text-decoration: none; }
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transform: translateY(-1px);
 }
+.btn:focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.75);
+  outline-offset: 2px;
+}
+.btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 9px; }
 .btn:active { transform: translateY(0) scale(0.98); }
 .btn-primary {
   background: linear-gradient(135deg, rgba(34, 211, 238, 0.9), rgba(139, 92, 246, 0.9));
@@ -118,6 +135,7 @@ input:focus, select:focus, textarea:focus {
 select option { background: var(--bg-2); color: var(--text-0); }
 input::placeholder, textarea::placeholder { color: var(--text-2); }
 label { font-size: 12.5px; color: var(--text-1); display: block; margin-bottom: 6px; letter-spacing: 0.04em; }
+input[type="number"]::-webkit-inner-spin-button { opacity: 0.55; }
 
 /* ---------- table ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -125,6 +143,7 @@ th, td {
   padding: 13px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   text-align: left;
+  vertical-align: middle;
 }
 th {
   color: var(--text-2);
@@ -132,8 +151,9 @@ th {
   font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.035);
 }
+tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.2s ease; }
 tbody tr:hover { background: rgba(34, 211, 238, 0.06); }
 tbody tr.selected { background: rgba(34, 211, 238, 0.08); }
@@ -183,8 +203,8 @@ tbody tr.selected { background: rgba(34, 211, 238, 0.08); }
   color: var(--text-0);
   z-index: 200;
   font-size: 14px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--glass-border-strong);
   box-shadow: var(--shadow);
   animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -222,7 +242,25 @@ code {
   justify-content: space-between;
   margin-bottom: 20px;
 }
-h2 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
+h2 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: 0.02em;
+  background: linear-gradient(90deg, #ffffff, rgba(34, 211, 238, 0.92));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.page-head h2 { position: relative; padding-bottom: 7px; }
+.page-head h2::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 36px; height: 2px;
+  border-radius: 2px;
+  background: var(--grad);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.55);
+}
 h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 0.03em; }
 
 .modal-mask {
@@ -235,8 +273,8 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
 }
 .modal {
   background: rgba(14, 20, 38, 0.92);
-  backdrop-filter: blur(30px) saturate(150%);
-  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-lg);
   padding: 26px;
@@ -246,6 +284,10 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
   animation: pop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .modal h3 { margin: 0 0 16px; font-size: 15px; letter-spacing: 0.03em; }
+.modal h3 {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
 .modal-lg { width: 640px; }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -255,9 +297,19 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
 }
 
 .btns { margin-top: 16px; display: flex; gap: 8px; }
+.modal .btns { justify-content: flex-end; }
 .ops { display: flex; gap: 6px; }
 .hint { color: var(--text-2); font-size: 12px; }
-.empty { color: var(--text-2); font-size: 13px; padding: 16px; text-align: center; }
+.empty {
+  color: var(--text-2);
+  font-size: 13px;
+  padding: 26px 16px;
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  margin-top: 12px;
+}
 
 .progress-bar {
   margin-top: 14px; position: relative; height: 28px;
@@ -271,3 +323,27 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
 }
 @keyframes shimmer { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
 .progress-bar span { position: relative; z-index: 1; font-size: 12px; color: var(--text-1); }
+
+/* ---------- small screens ---------- */
+@media (max-width: 720px) {
+  .page-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .head-right, .head-btns {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+}
+
+/* ---------- performance: reduce motion on low-power devices ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

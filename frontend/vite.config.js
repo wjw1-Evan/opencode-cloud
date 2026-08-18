@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 
@@ -18,5 +18,9 @@ export default defineConfig({
       '/dc-static': 'http://localhost:8080',
       '/platform': 'http://localhost:8080',
     },
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.js'],
   },
 })

@@ -30,7 +30,7 @@ func TestMemoryUserCRUD(t *testing.T) {
 	ctx := context.Background()
 	u := &model.User{
 		ID: "u1", Username: "alice", PasswordHash: "h", PasswordPlain: "p",
-		Role: model.RoleUser,
+		Role:      model.RoleUser,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 

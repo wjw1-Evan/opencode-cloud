@@ -100,11 +100,3 @@ func decodeJSON(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 		t.Fatalf("decode json: %v body=%s", err, rec.Body.String())
 	}
 }
-
-func issueToken(tm *auth.TokenManager, u *model.User) string {
-	access, _, err := tm.Issue(u.ID, u.Username, string(u.Role))
-	if err != nil {
-		panic(err)
-	}
-	return access
-}

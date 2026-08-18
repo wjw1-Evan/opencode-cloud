@@ -60,21 +60,21 @@
             <td class="chk">
               <input v-if="u.role !== 'admin'" type="checkbox" :checked="selected.has(u.id)" @change="toggle(u.id)" />
             </td>
-            <td class="uname">{{ u.username }}</td>
-            <td><code v-if="u.password" class="pwd">{{ u.password }}</code><span v-else class="dim">-</span></td>
-            <td><span v-if="u.course" class="course-txt">{{ u.course }}</span><span v-else class="dim">-</span></td>
-            <td>
+            <td class="uname" :data-label="t('thUsername')">{{ u.username }}</td>
+            <td :data-label="t('thPassword')"><code v-if="u.password" class="pwd">{{ u.password }}</code><span v-else class="dim">-</span></td>
+            <td :data-label="t('thCourse')"><span v-if="u.course" class="course-txt">{{ u.course }}</span><span v-else class="dim">-</span></td>
+            <td :data-label="t('thStatus')">
               <span class="badge clickable" :class="effStatus(u)" @click="openDetail('status', u)">{{ statusLabel(effStatus(u)) }}</span>
             </td>
-            <td>
+            <td :data-label="t('thTemplate')">
               <span v-if="u.container" class="badge tpl clickable" @click="openDetail('template', u)">{{ templateById.get(u.container.template_id)?.name || u.container.template_id }}</span>
               <span v-else class="dim">-</span>
             </td>
-            <td>
+            <td :data-label="t('thContainerStatus')">
               <span v-if="u.container" class="badge clickable" :class="u.container.status" @click="openDetail('container', u)">{{ u.container.status }}</span>
               <span v-else class="dim">-</span>
             </td>
-            <td class="time">{{ fmtTime(u.created_at) }}</td>
+            <td class="time" :data-label="t('thCreatedAt')">{{ fmtTime(u.created_at) }}</td>
           </tr>
         </tbody>
       </table>
@@ -173,7 +173,7 @@ const busyAction = ref('')
 const selected = ref(new Set())
 const loading = ref(false)
 const updatedAt = ref('')
-const POLL_MS = 1000
+const POLL_MS = 5000
 let timer = null
 
 const confirmVisible = ref(false)
@@ -262,10 +262,11 @@ onUnmounted(() => clearInterval(timer))
 
 async function refresh() {
   if (loading.value) return
+  if (document.hidden) return
   loading.value = true
   try {
     await load()
-    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    updatedAt.value = new Date().toLocaleTimeString(navigator.language || 'zh-CN', { hour12: false })
   } finally {
     loading.value = false
   }
@@ -417,10 +418,6 @@ async function batchCreate() {
   }
 }
 
-function tplOf(id) {
-  return templateById.value.get(id)
-}
-
 function portStr(port, extra) {
   return `${port || '-'}${(extra || []).length ? ' / ' + extra.join(',') : ''}`
 }
@@ -438,7 +435,7 @@ function fmtMem(bytes) {
 
 function fmtTime(ts) {
   if (!ts) return '-'
-  return new Date(ts).toLocaleString('zh-CN')
+  return new Date(ts).toLocaleString(navigator.language || 'zh-CN')
 }
 
 function fmtUp(ts) {
@@ -481,11 +478,10 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
 .uname { font-weight: 600; }
 .course-txt { color: var(--violet); font-weight: 500; }
 .pwd { font-family: var(--font-mono); font-size: 12px; }
-.ports { font-family: var(--font-mono); font-size: 12px; color: var(--text-1); }
 .badge.tpl { color: var(--cyan); border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.08); }
 .badge.clickable { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
 .badge.clickable:hover { transform: translateY(-1px); box-shadow: 0 0 14px rgba(34, 211, 238, 0.25); }
-.kv { display: flex; gap: 10px; padding: 5px 0; font-size: 13px; line-height: 1.7; }
+.kv { display: flex; gap: 12px; padding: 7px 0; font-size: 13px; line-height: 1.7; }
 .kv .k { color: var(--text-2); min-width: 72px; flex-shrink: 0; }
 .kv .v { color: var(--text-0); word-break: break-all; white-space: pre-line; }
 .kv .v code { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); white-space: pre-wrap; word-break: break-all; }
@@ -506,9 +502,7 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
 }
 .switch.on .track { background: var(--ok); border-color: rgba(52, 211, 153, 0.4); }
 .switch.on .thumb { transform: translateX(18px); background: #fff; }
-.modal .btns { justify-content: flex-end; }
 .time { color: var(--text-2); font-size: 12px; white-space: nowrap; }
-.btn-sm { padding: 5px 12px; font-size: 12px; }
 .expiry-in {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -522,4 +516,47 @@ h3 { margin: 0 0 14px; font-size: 14.5px; color: var(--text-0); letter-spacing: 
 .dim { color: var(--text-2); }
 .net-hint { margin-left: 14px; color: var(--text-2); }
 .net-hint code { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); }
+.table-card {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+table { min-width: 760px; }
+@media (max-width: 720px) {
+  table { min-width: 0; }
+  thead { display: none; }
+  tbody, tr, td { display: block; width: 100%; }
+  tr {
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+    text-align: right;
+  }
+  td:last-child { border-bottom: none; }
+  td::before {
+    content: attr(data-label);
+    color: var(--text-2);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  td.chk { justify-content: flex-start; }
+  td.chk::before { display: none; }
+  td code { word-break: break-all; }
+  .row > div, .row .span2 { min-width: 100%; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .course-filter { width: 100%; }
+  .toolbar-btns { width: 100%; }
+  .toolbar-btns .btn { flex: 1 1 auto; }
+}
 </style>

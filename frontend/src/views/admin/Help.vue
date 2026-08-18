@@ -5,6 +5,17 @@
     </div>
 
     <div class="card">
+      <h3>{{ t('helpIntroTitle') }}</h3>
+      <p class="intro-desc">{{ t('helpIntroDesc') }}</p>
+      <ul>
+        <li><b>{{ t('helpF1') }}</b>：{{ t('helpF1Desc') }}</li>
+        <li><b>{{ t('helpF2') }}</b>：{{ t('helpF2Desc') }}</li>
+        <li><b>{{ t('helpF3') }}</b>：{{ t('helpF3Desc') }}</li>
+        <li><b>{{ t('helpF4') }}</b>：{{ t('helpF4Desc') }}</li>
+      </ul>
+    </div>
+
+    <div class="card">
       <h3>{{ t('quickStart') }}</h3>
       <ol>
         <li><b>{{ t('step1') }}</b>：{{ t('step1Desc') }}</li>
@@ -59,6 +70,7 @@
         <li v-html="t('faq2')"></li>
         <li v-html="t('faq3')"></li>
         <li v-html="t('faq4')"></li>
+        <li v-html="t('faq5')"></li>
       </ul>
     </div>
   </div>
@@ -75,4 +87,5 @@ const { t } = inject('i18n')
 .card { margin-bottom: 16px; }
 ul, ol { margin: 0; padding-left: 20px; line-height: 2; font-size: 14px; color: var(--text-1); }
 li b { color: var(--cyan); }
+.intro-desc { color: var(--text-1); font-size: 14px; line-height: 1.8; margin: 0 0 10px; }
 </style>
