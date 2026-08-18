@@ -1,5 +1,7 @@
-# Build frontend
-FROM node:20-alpine AS frontend
+# Build frontend once on the native build platform. The output is
+# platform-independent JS/CSS, and running `npm ci` under QEMU for foreign
+# arches is slow and can crash (illegal-instruction core dumps).
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci
